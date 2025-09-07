@@ -89,6 +89,7 @@
           <div id="noteList" class="space-y-4">
             <div class="text-gray-500 text-center py-10">暂无笔记</div>
           </div>
+          <div id="pagination" class="flex justify-center items-center gap-2 mt-4"></div>
         </div>
         <!-- 右侧词云 -->
         <aside class="md:col-span-3">
@@ -202,7 +203,10 @@
 
   <script>
     const API_BASE = "/api";
-    const PAGE_LIMIT = 20;
+    const PAGE_LIMIT = 20; // 旧的单次裁剪常量，保留兼容
+    const PAGE_SIZE = 10;  // 分页：每页显示数量
+    let ALL_NOTES = [];
+    let CURRENT_PAGE = 1;
 
     function renderMarkdown(md) {
       try { return DOMPurify.sanitize(marked.parse(md || '')); }
@@ -628,14 +632,56 @@
         }
         const res = await fetch(`${API_BASE}/search?query=${encodeURIComponent(query)}`);
         const results = await res.json();
-        renderNotes((results || []).slice(0, PAGE_LIMIT));
+        setNotes(results || []);
       });
 
       // 加载笔记
       async function loadNotes() {
         const res = await fetch(`${API_BASE}/notes`);
         const notes = await res.json();
-        renderNotes((notes || []).slice(0, PAGE_LIMIT));
+        setNotes(notes || []);
+      }
+
+      function setNotes(list) {
+        ALL_NOTES = Array.isArray(list) ? list : [];
+        CURRENT_PAGE = 1;
+        renderPage();
+      }
+
+      function renderPage() {
+        const total = ALL_NOTES.length;
+        const start = (CURRENT_PAGE - 1) * PAGE_SIZE;
+        const pageNotes = ALL_NOTES.slice(start, start + PAGE_SIZE);
+        renderNotes(pageNotes);
+        renderPagination(total);
+      }
+
+      function renderPagination(total) {
+        const container = document.getElementById('pagination');
+        if (!container) return;
+        const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+        if (total === 0) { container.innerHTML = ''; return; }
+        const prevDisabled = CURRENT_PAGE <= 1 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-100';
+        const nextDisabled = CURRENT_PAGE >= pages ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-100';
+        const pageBtns = Array.from({ length: pages }, (_, i) => i + 1).slice(0, 100).map(p => {
+          const active = p === CURRENT_PAGE ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-100';
+          return `<button data-page="${p}" class="px-3 py-1 border rounded ${active}">${p}</button>`;
+        }).join('');
+        container.innerHTML = `
+          <button id="pgPrev" class="px-3 py-1 border rounded ${prevDisabled}">上一页</button>
+          ${pageBtns}
+          <button id="pgNext" class="px-3 py-1 border rounded ${nextDisabled}">下一页</button>
+        `;
+        const prev = document.getElementById('pgPrev');
+        const next = document.getElementById('pgNext');
+        if (prev) prev.onclick = () => { if (CURRENT_PAGE > 1) { CURRENT_PAGE -= 1; renderPage(); } };
+        if (next) next.onclick = () => { if (CURRENT_PAGE < pages) { CURRENT_PAGE += 1; renderPage(); } };
+        container.querySelectorAll('button[data-page]')?.forEach(btn => {
+          btn.addEventListener('click', () => {
+            const p = Number(btn.getAttribute('data-page') || '1');
+            if (!Number.isNaN(p)) { CURRENT_PAGE = p; renderPage(); }
+          });
+        });
       }
 
       async function loadStats() {
@@ -687,11 +733,11 @@
           if (t === 'category') {
             const res = await fetch(`${API_BASE}/notes/by_category?category=${encodeURIComponent(name)}`);
             const list = await res.json();
-            renderNotes(list.slice(0, PAGE_LIMIT));
+            setNotes(list || []);
           } else {
             const res = await fetch(`${API_BASE}/notes/by_tag?tag=${encodeURIComponent(name)}`);
             const list = await res.json();
-            renderNotes(list.slice(0, PAGE_LIMIT));
+            setNotes(list || []);
           }
         };
       }
