@@ -8,7 +8,6 @@ from typing import List, Optional
 from fastapi import FastAPI, Form, UploadFile, File, HTTPException, Depends, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from jose import jwt
 from passlib.context import CryptContext
@@ -30,6 +29,9 @@ CURRENT_MODEL = DEFAULT_MODEL
 DATA_DIR = Path("data")
 NOTES_DIR = Path("notes")
 NOTES_DIR.mkdir(exist_ok=True)
+
+# 默认提示词文件路径
+PROMPT_FILE = DATA_DIR / "prompts.txt"
 
 # 数据库
 DB_PATH = DATA_DIR / "notes.db"
@@ -78,6 +80,8 @@ class UpdateNoteRequest(BaseModel):
     id: int
     title: Optional[str] = None
     content: Optional[str] = None
+    category: Optional[str] = None
+    tags: Optional[str] = None
 
 # -----------------------------
 # 工具函数
@@ -177,12 +181,37 @@ def search_notes(query: str) -> List[dict]:
         })
     return results
 
+def read_default_prompt() -> str:
+    """从文件加载默认优化提示词，文件缺失或为空时回退到内置简短提示。"""
+    fallback = "帮助用户完善笔记文档，并整理归类总结"
+    try:
+        if PROMPT_FILE.exists():
+            text = PROMPT_FILE.read_text(encoding="utf-8").strip()
+            return text or fallback
+    except Exception:
+        pass
+    return fallback
+
+def parse_tags_to_list(tags_value: Optional[str]) -> List[str]:
+    """将逗号分隔的标签字符串解析为去空白后的列表。"""
+    if not tags_value:
+        return []
+    # 兼容性：若前端传来 JSON 数组被转为字符串如 "[\"a\", \"b\"]"，尽量解析
+    txt = str(tags_value).strip()
+    try:
+        if txt.startswith('[') and txt.endswith(']'):
+            arr = json.loads(txt)
+            if isinstance(arr, list):
+                return [str(x).strip() for x in arr if str(x).strip()]
+    except Exception:
+        pass
+    return [t.strip() for t in txt.split(',') if t.strip()]
+
 # -----------------------------
 # FastAPI App
 # -----------------------------
 app = FastAPI()
 #app.mount("/static", StaticFiles(directory="static"), name="static")
-templates = Jinja2Templates(directory="templates")
 
 # 临时保存配置（生产环境建议用数据库或环境变量）
 config_cache = {}
@@ -259,24 +288,32 @@ async def create_note(note: Note, request: Request):
     # 确保 AI 客户端可用（支持从 Cookie 自动重建）
     _ = get_ai_client(request)
 
-    # 自动分析
-    category, tags = extract_category_and_tags(note.content)
-    if not note.category:
-        note.category = category
+    # 处理分类/标签：优先使用用户提供值，否则调用 AI 分析
+    user_category = (note.category or '').strip()
+    user_tags_list = parse_tags_to_list(note.tags or '')
+    if not user_category or not user_tags_list:
+        category, tags = extract_category_and_tags(note.content)
+        if not user_category:
+            user_category = category
+        if not user_tags_list:
+            user_tags_list = tags
 
     # 保存到数据库
-    filename = save_note_to_file(note.title, note.content, note.category, tags)
+    filename = save_note_to_file(note.title, note.content, user_category, user_tags_list)
     cursor.execute("""
         INSERT INTO notes (title, content, category, tags, filename)
         VALUES (?, ?, ?, ?, ?)
-    """, (note.title, note.content, note.category, ",".join(tags), filename))
+    """, (note.title, note.content, user_category, ",".join(user_tags_list), filename))
     conn.commit()
 
     return {"message": "笔记保存成功", "filename": filename}
 
 @app.put("/api/note")
 async def update_note(req: UpdateNoteRequest, request: Request):
-    """更新笔记内容（可选更新标题）。会重新用 AI 提取分类与标签并更新存储文件。"""
+    """更新笔记内容（可选更新标题/分类/标签）。
+    优先使用用户传入的 category/tags；若未提供则对新内容调用 AI 提取。
+    更新后会根据分类/标题变化迁移文件路径。
+    """
     _ = get_ai_client(request)
 
     cursor.execute("SELECT id, title, content, category, tags, filename FROM notes WHERE id = ?", (req.id,))
@@ -293,12 +330,19 @@ async def update_note(req: UpdateNoteRequest, request: Request):
     new_title = req.title if (req.title is not None and req.title.strip() != "") else current_title
     new_content = req.content if (req.content is not None) else current_content
 
-    # 重新分析分类与标签
-    category, tags_list = extract_category_and_tags(new_content)
-    tags_str = ",".join(tags_list)
+    # 分类与标签：优先使用用户提供，否则基于新内容自动提取
+    user_category = (req.category or '').strip()
+    user_tags_list = parse_tags_to_list(req.tags or '')
+    if not user_category or not user_tags_list:
+        category, tags_list = extract_category_and_tags(new_content)
+        if not user_category:
+            user_category = category
+        if not user_tags_list:
+            user_tags_list = tags_list
+    tags_str = ",".join(user_tags_list)
 
     # 写入文件（并删除旧文件如路径变化）
-    new_rel_path = update_note_file(original_filename, new_title, new_content, category, tags_list)
+    new_rel_path = update_note_file(original_filename, new_title, new_content, user_category, user_tags_list)
 
     # 更新数据库
     cursor.execute(
@@ -307,7 +351,7 @@ async def update_note(req: UpdateNoteRequest, request: Request):
         SET title = ?, content = ?, category = ?, tags = ?, filename = ?
         WHERE id = ?
         """,
-        (new_title, new_content, category, tags_str, new_rel_path, req.id)
+        (new_title, new_content, user_category, tags_str, new_rel_path, req.id)
     )
     conn.commit()
 
@@ -376,6 +420,31 @@ async def stats():
     tag_counts.sort(key=lambda x: x["count"], reverse=True)
     return {"categories": cat_counts[:100], "tags": tag_counts[:200]}
 
+@app.get("/api/categories")
+async def list_categories():
+    """返回已有分类（去重、按出现次数倒序）。"""
+    cursor.execute(
+        """
+        SELECT category, COUNT(1)
+        FROM notes
+        WHERE category IS NOT NULL AND category != ''
+        GROUP BY category
+        """
+    )
+    rows = cursor.fetchall()
+    rows.sort(key=lambda r: r[1], reverse=True)
+    return [r[0] for r in rows]
+
+@app.get("/api/tags")
+async def list_tags():
+    """返回已有标签（去重、按出现次数倒序）。"""
+    cursor.execute("SELECT tags FROM notes WHERE tags IS NOT NULL AND tags != ''")
+    counter = {}
+    for (tags_str,) in cursor.fetchall():
+        for t in [x.strip() for x in tags_str.split(',') if x.strip()]:
+            counter[t] = counter.get(t, 0) + 1
+    return [k for k, _ in sorted(counter.items(), key=lambda kv: kv[1], reverse=True)]
+
 @app.post("/api/optimize")
 async def optimize_text(req: OptimizeRequest, request: Request):
     """调用大模型同时进行正文优化并生成标题，允许自定义提示词。
@@ -383,7 +452,8 @@ async def optimize_text(req: OptimizeRequest, request: Request):
     """
     _ = get_ai_client(request)
 
-    base_prompt = (req.prompt or "帮助用户完善笔记文档，并整理归类总结").strip()
+    # 优先使用请求中的自定义提示词，否则从文件加载默认提示词
+    base_prompt = (req.prompt or read_default_prompt()).strip()
     try:
         response = client.chat.completions.create(
             model=CURRENT_MODEL,
@@ -463,4 +533,29 @@ async def delete_note(id: int):
 # -----------------------------
 if __name__ == "__main__":
     import uvicorn
+    import threading
+    import webbrowser
+    import time
+    import socket
+    import os
+
+    def open_browser_when_ready(url: str, host: str = "127.0.0.1", port: int = 8000):
+        """等待端口就绪后在默认浏览器打开应用。"""
+        for _ in range(50):  # 最长约 10-15 秒
+            try:
+                with socket.create_connection((host, port), timeout=0.5):
+                    break
+            except Exception:
+                time.sleep(0.3)
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
+
+    threading.Thread(
+        target=open_browser_when_ready,
+        kwargs={"url": "http://127.0.0.1:8000", "host": "127.0.0.1", "port": 8000},
+        daemon=True,
+    ).start()
+
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

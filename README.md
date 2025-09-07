@@ -82,12 +82,12 @@ python main.py
 - GET `/config`：读取当前 Cookie 配置
   - 响应：`{ api_url, api_key, logged_in, default_model }`
 
-- POST `/note`：新建笔记（自动提取分类/标签、写入 DB 与 Markdown 文件）
+- POST `/note`：新建笔记（自动提取分类/标签、写入 DB 与 Markdown 文件；也可在请求体中直接指定）
   - 请求体：`{ title: string, content: string, category?: string, tags?: string }`
   - 响应：`{ message: "笔记保存成功", filename }`
 
-- PUT `/note`：更新笔记内容/标题（会重新提取分类与标签，并自动迁移旧文件路径）
-  - 请求体：`{ id: number, title?: string, content?: string }`
+- PUT `/note`：更新笔记内容/标题/分类/标签（未显式提供的字段将保留或由 AI 重新推断）
+  - 请求体：`{ id: number, title?: string, content?: string, category?: string, tags?: string }`
   - 响应：`{ message: "更新成功", id }`
 
 - DELETE `/note?id=ID`：删除笔记（数据库记录与对应文件）
@@ -109,6 +109,9 @@ python main.py
   - 请求体：`{ content: string, prompt?: string }`
   - 响应：`{ title: string, optimized: string }`
 
+- GET `/categories`：返回已有分类（去重、按频次倒序）
+- GET `/tags`：返回已有标签（去重、按频次倒序）
+
 
 ## 数据与存储
 
@@ -117,6 +120,12 @@ python main.py
 - Markdown 文件：保存在 `notes/分类/标题.md`
   - 文件内容：一级标题为标题，首部包含「分类、标签」信息，其后为正文
   - 更新笔记时如分类或标题变化，会自动删除旧文件并写入新路径
+
+### 默认优化提示词
+
+- 文件位置：`data/prompts.txt`
+- 用途：当「AI 优化」未传入自定义提示词时，后端会从该文件读取默认提示词。
+- 注意：若文件不存在或为空，将回退为简短默认值「帮助用户完善笔记文档，并整理归类总结」。
 
 
 ## 模型与连接说明

@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>智能笔记管理器</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
   <style>
     .note-card { transition: all 0.2s; }
     .note-card:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(0,0,0,0.1); }
@@ -23,6 +25,11 @@
       cursor: move;
       user-select: none;
     }
+    /* 模糊搜索下拉建议 */
+    .suggest-list { position: absolute; z-index: 60; background: #fff; border: 1px solid #e5e7eb; border-radius: 0.375rem; box-shadow: 0 10px 15px rgba(0,0,0,0.08); max-height: 220px; overflow-y: auto; width: 100%; }
+    .suggest-item { padding: 6px 10px; font-size: 14px; cursor: pointer; }
+    .suggest-item:hover { background: #f3f4f6; }
+    .suggest-item.active { background: #e5f0ff; }
   </style>
 </head>
 <body class="h-full font-sans">
@@ -105,7 +112,22 @@
           </div>
           <hr class="my-2" />
           <textarea id="noteContent" placeholder="输入笔记内容..." class="w-full h-64 p-2 border rounded font-mono text-sm" style="font-family: 'Courier New', monospace;"></textarea>
+          <div class="mt-3 flex items-center justify-between">
+            <span class="text-sm text-gray-500">支持 Markdown</span>
+            <button id="toggleNewPreviewBtn" class="px-3 py-1 border rounded hover:bg-gray-100">预览 Markdown</button>
+          </div>
+          <div id="notePreview" class="mt-2 p-3 border rounded bg-gray-50 hidden overflow-x-auto"></div>
           <input type="text" id="noteTitle" placeholder="笔记标题" class="w-full mt-4 p-2 border rounded" />
+          <div class="mt-3 grid md:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-sm text-gray-700 mb-1">分类（可选）</label>
+              <input id="noteCategory" placeholder="选择或输入分类" class="w-full p-2 border rounded" />
+            </div>
+            <div>
+              <label class="block text-sm text-gray-700 mb-1">标签（可选，逗号分隔）</label>
+              <input id="noteTags" placeholder="例如：Python, AI" class="w-full p-2 border rounded" />
+            </div>
+          </div>
           <div class="mt-4">
             <label class="block text-sm text-gray-700 mb-2">AI 优化提示词（可选）</label>
             <input id="newOptPrompt" type="text" placeholder="帮助用户完善笔记文档，并整理归类总结" class="w-full mb-3 p-2 border rounded" />
@@ -138,13 +160,32 @@
             <button id="closeViewBtn" class="ml-4 px-3 py-1 border rounded hover:bg-gray-100">关闭</button>
           </div>
           <hr class="mb-2" />
-          <pre id="viewContent" class="whitespace-pre-wrap break-words bg-gray-50 p-4 rounded border text-sm overflow-x-auto" style="font-family: 'Courier New', monospace;"></pre>
+          <div class="mb-2 flex gap-2">
+            <button id="toggleEditBtn" class="px-3 py-1 border rounded hover:bg-gray-100">编辑模式</button>
+            <button id="togglePreviewBtn" class="px-3 py-1 border rounded hover:bg-gray-100 hidden">预览模式</button>
+          </div>
+          <div class="grid md:grid-cols-3 gap-3 mb-3">
+            <div>
+              <label class="block text-sm text-gray-700 mb-1">标题</label>
+              <input id="editTitle" type="text" class="w-full p-2 border rounded" placeholder="编辑标题" />
+            </div>
+            <div>
+              <label class="block text-sm text-gray-700 mb-1">分类</label>
+              <input id="editCategory" class="w-full p-2 border rounded" placeholder="选择或输入分类" />
+            </div>
+            <div>
+              <label class="block text-sm text-gray-700 mb-1">标签（逗号分隔）</label>
+              <input id="editTags" class="w-full p-2 border rounded" placeholder="例如：Python, AI" />
+            </div>
+          </div>
+          <textarea id="viewEditor" class="w-full h-64 p-2 border rounded font-mono text-sm hidden" style="font-family:'Courier New', monospace;"></textarea>
+          <div id="viewPreview" class="whitespace-normal break-words bg-gray-50 p-4 rounded border text-sm overflow-x-auto"></div>
           <div class="mt-4 border-t pt-4">
             <label class="block text-sm text-gray-700 mb-2">AI 优化提示词（可选）</label>
             <input id="optPrompt" type="text" placeholder="帮助用户完善笔记文档，并整理归类总结" class="w-full mb-3 p-2 border rounded" />
             <div class="flex gap-3">
               <button id="optimizeBtn" class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700">AI 优化</button>
-              <button id="saveOptimizedBtn" class="px-4 py-2 border rounded hover:bg-gray-100" disabled>保存更新</button>
+              <button id="saveOptimizedBtn" class="px-4 py-2 border rounded hover:bg-gray-100">保存更新</button>
               <button id="deleteNoteBtn" class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">删除</button>
             </div>
             <div id="optStatus" class="text-sm text-gray-500 mt-2 hidden">正在调用 AI 优化…</div>
@@ -162,6 +203,89 @@
   <script>
     const API_BASE = "/api";
     const PAGE_LIMIT = 20;
+
+    function renderMarkdown(md) {
+      try { return DOMPurify.sanitize(marked.parse(md || '')); }
+      catch (_) {
+        return DOMPurify.sanitize((md || '').replace(/[&<>]/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[s])));
+      }
+    }
+
+    // 工具：为输入框添加模糊搜索建议（sourceGetter 返回字符串数组；isTags=true 表示以逗号分隔，替换最后片段）
+    function attachFuzzySuggest(inputEl, sourceGetter, isTags=false) {
+      if (!inputEl || typeof sourceGetter !== 'function') return;
+      const wrapper = document.createElement('div');
+      wrapper.style.position = 'relative';
+      const parent = inputEl.parentElement;
+      if (parent) parent.style.position = parent.style.position || 'relative';
+      const list = document.createElement('div');
+      list.className = 'suggest-list hidden';
+      parent.appendChild(list);
+      let activeIndex = -1;
+
+      function getQueryParts() {
+        const val = (inputEl.value || '').trim();
+        if (!isTags) return [val, null];
+        const parts = val.split(',');
+        const last = parts.pop();
+        return [String(last || '').trim(), parts];
+      }
+      function setWithSelection(choice) {
+        if (!isTags) { inputEl.value = choice; return; }
+        const [_, head] = getQueryParts();
+        const newVal = [...(head || []), choice].filter(s => s !== '').join(', ');
+        inputEl.value = newVal;
+      }
+      function render(query) {
+        const src = sourceGetter() || [];
+        const q = (query || '').toLowerCase();
+        const items = q ? src.filter(v => String(v).toLowerCase().includes(q)) : src.slice(0, 20);
+        if (!items.length) { list.innerHTML = ''; list.classList.add('hidden'); activeIndex = -1; return; }
+        list.innerHTML = items.slice(0, 20).map((v, i) => `<div class="suggest-item${i===0?' active':''}" data-index="${i}" data-val="${String(v).replace(/"/g,'&quot;')}">${v}</div>`).join('');
+        activeIndex = 0;
+        list.classList.remove('hidden');
+      }
+      function moveActive(delta) {
+        const items = list.querySelectorAll('.suggest-item');
+        if (!items.length) return;
+        activeIndex = (activeIndex + delta + items.length) % items.length;
+        items.forEach((el,i)=>{ el.classList.toggle('active', i===activeIndex); });
+      }
+      function pickActive() {
+        const item = list.querySelector(`.suggest-item[data-index="${activeIndex}"]`);
+        if (!item) return;
+        const val = item.getAttribute('data-val') || '';
+        setWithSelection(val);
+        list.classList.add('hidden');
+        inputEl.dispatchEvent(new Event('change'));
+      }
+      inputEl.addEventListener('input', () => {
+        const [q] = getQueryParts();
+        render(q);
+      });
+      inputEl.addEventListener('focus', () => {
+        const [q] = getQueryParts();
+        render(q);
+      });
+      inputEl.addEventListener('keydown', (e) => {
+        if (list.classList.contains('hidden')) return;
+        if (e.key === 'ArrowDown') { e.preventDefault(); moveActive(1); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); moveActive(-1); }
+        else if (e.key === 'Enter') { e.preventDefault(); pickActive(); }
+        else if (e.key === 'Escape') { list.classList.add('hidden'); }
+      });
+      document.addEventListener('click', (e) => {
+        if (!list.contains(e.target) && e.target !== inputEl) list.classList.add('hidden');
+      });
+      list.addEventListener('click', (e) => {
+        const item = e.target.closest('.suggest-item');
+        if (!item) return;
+        const val = item.getAttribute('data-val') || '';
+        setWithSelection(val);
+        list.classList.add('hidden');
+        inputEl.dispatchEvent(new Event('change'));
+      });
+    }
 
     // 读取 Cookie 配置
     function getCookie(name) {
@@ -201,6 +325,61 @@
       const newOptimizeCombinedBtn = document.getElementById("newOptimizeCombinedBtn");
       const newOptPrompt = document.getElementById("newOptPrompt");
       const newOptStatus = document.getElementById("newOptStatus");
+
+      // 缓存分类/标签列表供建议
+      let cachedCategories = [];
+      let cachedTags = [];
+
+      // 新建笔记 Markdown 预览
+      const noteContentEl = document.getElementById("noteContent");
+      const notePreviewEl = document.getElementById("notePreview");
+      const toggleNewPreviewBtn = document.getElementById("toggleNewPreviewBtn");
+
+      // 预览/编辑切换元素
+      const viewEditor = document.getElementById("viewEditor");
+      const viewPreview = document.getElementById("viewPreview");
+      const toggleEditBtn = document.getElementById("toggleEditBtn");
+      const togglePreviewBtn = document.getElementById("togglePreviewBtn");
+
+      // 当前预览弹窗的原始 Markdown
+      let currentViewRaw = '';
+
+      function setViewRaw(text) {
+        currentViewRaw = String(text || '');
+        if (viewEditor) viewEditor.value = currentViewRaw;
+        if (viewPreview) viewPreview.innerHTML = renderMarkdown(currentViewRaw);
+      }
+      function enterEditMode() {
+        if (!viewEditor || !viewPreview) return;
+        viewEditor.classList.remove('hidden');
+        viewPreview.classList.add('hidden');
+        if (toggleEditBtn) toggleEditBtn.classList.add('hidden');
+        if (togglePreviewBtn) togglePreviewBtn.classList.remove('hidden');
+      }
+      function enterPreviewMode(syncFromEditor = false) {
+        if (!viewEditor || !viewPreview) return;
+        if (syncFromEditor) currentViewRaw = viewEditor.value || '';
+        viewPreview.innerHTML = renderMarkdown(currentViewRaw);
+        viewEditor.classList.add('hidden');
+        viewPreview.classList.remove('hidden');
+        if (toggleEditBtn) toggleEditBtn.classList.remove('hidden');
+        if (togglePreviewBtn) togglePreviewBtn.classList.add('hidden');
+      }
+      if (toggleEditBtn) toggleEditBtn.onclick = () => enterEditMode();
+      if (togglePreviewBtn) togglePreviewBtn.onclick = () => enterPreviewMode(true);
+
+      // 新建：预览切换
+      if (toggleNewPreviewBtn && noteContentEl && notePreviewEl) {
+        const syncNewPreview = () => { notePreviewEl.innerHTML = renderMarkdown(noteContentEl.value || ''); };
+        toggleNewPreviewBtn.onclick = () => {
+          const hidden = notePreviewEl.classList.contains('hidden');
+          if (hidden) { syncNewPreview(); notePreviewEl.classList.remove('hidden'); toggleNewPreviewBtn.textContent = '隐藏预览'; }
+          else { notePreviewEl.classList.add('hidden'); toggleNewPreviewBtn.textContent = '预览 Markdown'; }
+        };
+        noteContentEl.addEventListener('input', () => {
+          if (!notePreviewEl.classList.contains('hidden')) syncNewPreview();
+        });
+      }
 
       const apiConfig = getCookie("api_config");
       const apiUrl = apiConfig ? apiConfig.split('|')[0] : "";
@@ -305,6 +484,8 @@
       saveNoteBtn.onclick = async () => {
         const title = document.getElementById("noteTitle").value.trim();
         const content = document.getElementById("noteContent").value.trim();
+        const category = (document.getElementById('noteCategory')?.value || '').trim();
+        const tags = (document.getElementById('noteTags')?.value || '').trim();
         if (!title || !content) {
           alert("标题和内容不能为空");
           return;
@@ -326,13 +507,17 @@
           const res = await fetch(`${API_BASE}/note`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ title, content })
+            body: JSON.stringify({ title, content, category, tags })
           });
           if (res.ok) {
             alert("笔记已保存！");
             newNoteModal.classList.add("hidden");
             noteTitleEl.value = "";
             noteContentEl.value = "";
+            const nc = document.getElementById('noteCategory');
+            const nt = document.getElementById('noteTags');
+            if (nc) nc.value = '';
+            if (nt) nt.value = '';
             await loadNotes();
           } else {
             const err = await res.json().catch(() => ({}));
@@ -458,6 +643,19 @@
         const data = await res.json();
         renderCloud(catCloud, data.categories || [], 'category');
         renderCloud(tagCloud, data.tags || [], 'tag');
+        // 同步 datalist 与缓存
+        try {
+          const [catsRes, tagsRes] = await Promise.all([
+            fetch(`${API_BASE}/categories`),
+            fetch(`${API_BASE}/tags`)
+          ]);
+          cachedCategories = catsRes.ok ? await catsRes.json() : [];
+          cachedTags = tagsRes.ok ? await tagsRes.json() : [];
+          const catOptions = document.getElementById('categoryOptions');
+          const tagOptions = document.getElementById('tagOptions');
+          if (catOptions) catOptions.innerHTML = (cachedCategories || []).map(v => `<option value="${String(v).replace(/"/g,'&quot;')}"></option>`).join('');
+          if (tagOptions) tagOptions.innerHTML = (cachedTags || []).map(v => `<option value="${String(v).replace(/"/g,'&quot;')}"></option>`).join('');
+        } catch (_) {}
       }
 
       function renderCloud(container, items, type) {
@@ -539,12 +737,13 @@
             try { contentText = decodeURIComponent(encodedContent); } catch (_) { contentText = ''; }
           }
 
+          let detail = null;
           if (!contentText && noteId) {
             try {
               const res = await fetch(`${API_BASE}/note?id=${encodeURIComponent(noteId)}`);
               if (res.ok) {
-                const data = await res.json();
-                contentText = data.content || data.text || '';
+                detail = await res.json();
+                contentText = detail.content || detail.text || '';
               }
             } catch (_) {
               // 忽略网络错误，在下方给出提示
@@ -552,17 +751,31 @@
           }
 
           viewTitle.textContent = noteTitle;
-          viewContent.textContent = contentText || '未能加载到该笔记的正文内容。';
+          setViewRaw(contentText || '未能加载到该笔记的正文内容。');
+          enterPreviewMode(false);
           // 记录到 modal 元素上，供后续保存使用
           viewNoteModal.setAttribute('data-note-id', noteId || '');
           viewNoteModal.setAttribute('data-note-title', noteTitle || '');
+          // 拉详情填充标题/分类/标签
+          try {
+            const res2 = await fetch(`${API_BASE}/note?id=${encodeURIComponent(noteId)}`);
+            if (res2.ok) {
+              const detail2 = await res2.json();
+              const et = document.getElementById('editTitle');
+              const ec = document.getElementById('editCategory');
+              const eg = document.getElementById('editTags');
+              if (et) et.value = detail2?.title || noteTitle || '';
+              if (ec) ec.value = detail2?.category || '';
+              if (eg) eg.value = detail2?.tags || '';
+            }
+          } catch (_) {}
           viewNoteModal.classList.remove('hidden');
         };
       }
       // AI 优化
       if (optimizeBtn) {
         optimizeBtn.onclick = async () => {
-          const content = viewContent.textContent || '';
+          const content = currentViewRaw || '';
           if (!content.trim()) {
             alert('没有可优化的内容');
             return;
@@ -591,8 +804,9 @@
             const data = await res.json();
             const optimized = (data && data.optimized) || '';
             if (optimized) {
-              viewContent.textContent = optimized;
+              setViewRaw(optimized);
               saveOptimizedBtn.disabled = false;
+              enterPreviewMode(false);
             }
           } catch (e) {
             alert('网络异常，优化失败');
@@ -605,23 +819,41 @@
 
       // 保存优化后的更新
       if (saveOptimizedBtn) {
+        // 任意编辑变更即允许保存
+        ['input','change','keyup'].forEach(evt => {
+          if (viewEditor) viewEditor.addEventListener(evt, () => { saveOptimizedBtn.disabled = false; });
+          const et = document.getElementById('editTitle');
+          const ec = document.getElementById('editCategory');
+          const eg = document.getElementById('editTags');
+          if (et) et.addEventListener(evt, () => { saveOptimizedBtn.disabled = false; });
+          if (ec) ec.addEventListener(evt, () => { saveOptimizedBtn.disabled = false; });
+          if (eg) eg.addEventListener(evt, () => { saveOptimizedBtn.disabled = false; });
+        });
+
         saveOptimizedBtn.onclick = async () => {
           const noteId = viewNoteModal.getAttribute('data-note-id');
           if (!noteId) {
             alert('未获取到笔记 ID，无法保存');
             return;
           }
-          const title = viewNoteModal.getAttribute('data-note-title') || '';
-          const content = viewContent.textContent || '';
+          const title = (document.getElementById('editTitle')?.value || viewNoteModal.getAttribute('data-note-title') || '').trim();
+          const category = (document.getElementById('editCategory')?.value || '').trim();
+          const tags = (document.getElementById('editTags')?.value || '').trim();
+          // 若在编辑模式，优先从编辑器取值，并同步到预览原文
+          let content = currentViewRaw || '';
+          if (viewEditor && !viewEditor.classList.contains('hidden')) {
+            content = viewEditor.value || '';
+            currentViewRaw = content;
+          }
           try {
             saveOptimizedBtn.disabled = true;
             const res = await fetch(`${API_BASE}/note`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ id: Number(noteId), title, content })
+              body: JSON.stringify({ id: Number(noteId), title, content, category, tags })
             });
             if (res.ok) {
-              alert('已保存优化结果');
+              alert('已保存优化/编辑结果');
               await Promise.all([loadNotes(), loadStats()]);
               viewNoteModal.classList.add('hidden');
             } else {
@@ -664,6 +896,12 @@
 
       // 初始加载
       await loadNotes();
+
+      // 绑定模糊建议到输入框
+      attachFuzzySuggest(document.getElementById('noteCategory'), () => cachedCategories, false);
+      attachFuzzySuggest(document.getElementById('editCategory'), () => cachedCategories, false);
+      attachFuzzySuggest(document.getElementById('noteTags'), () => cachedTags, true);
+      attachFuzzySuggest(document.getElementById('editTags'), () => cachedTags, true);
     });
   </script>
 </body>
