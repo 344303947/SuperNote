@@ -193,21 +193,58 @@ def extract_category_and_tags(content: str) -> tuple:
         print("AI 分析失败:", e)
         return "其他", ["未分类"]
 
-def save_note_to_file(title: str, content: str, category: str, tags: str):
-    safe_title = title.replace('/', '_').replace('\\', '_')
+def _sanitize_title(raw_title: str) -> str:
+    """将标题规范化：
+    - 若看起来是 JSON（例如 '{"title":"xxx"}'），尝试提取其中的 title 字段
+    - 移除/替换 Windows 非法文件名字符 <>:"/\\|?* 以及控制字符
+    - 去除首尾的点和空格
+    - 限长到 120 字符
+    """
+    txt = (raw_title or "").strip()
+    if txt.startswith("{") and ":" in txt:
+        try:
+            obj = json.loads(txt)
+            if isinstance(obj, dict) and obj.get("title"):
+                txt = str(obj.get("title")).strip()
+        except Exception:
+            pass
+    # 替换非法字符为下划线
+    txt = re.sub(r'[<>:"/\\|?*\u0000-\u001F]', '_', txt)
+    # 去掉首尾的点与空格（Windows 不允许）
+    txt = txt.strip(' .\t')
+    # 防止空标题
+    if not txt:
+        txt = "未命名"
+    # 限长
+    if len(txt) > 120:
+        txt = txt[:120]
+    return txt
+
+
+def _sanitize_dirname(raw_name: str) -> str:
+    """规范化目录名：移除 Windows 非法字符与首尾空白/点。"""
+    name = (raw_name or "其他").strip()
+    name = re.sub(r'[<>:"/\\|?*\u0000-\u001F]', '_', name)
+    name = name.strip(' .\t') or "其他"
+    return name
+
+
+def save_note_to_file(title: str, content: str, category: str, tags: List[str]):
+    safe_title = _sanitize_title(title)
+    safe_category = _sanitize_dirname(category)
     filename = f"{safe_title}.md"
-    filepath = NOTES_DIR / category / filename
+    filepath = NOTES_DIR / safe_category / filename
     filepath.parent.mkdir(parents=True, exist_ok=True)
     with open(filepath, "w", encoding="utf-8") as f:
-        f.write(f"# {title}\n")
-        f.write(f"**分类：** {category}\n")
+        f.write(f"# {safe_title}\n")
+        f.write(f"**分类：** {safe_category}\n")
         if tags:
             f.write(f"**标签：** {', '.join(tags)}\n")
         f.write("\n")
         f.write(content)
     return str(filepath.relative_to(NOTES_DIR))
 
-def update_note_file(original_relative_path: Optional[str], title: str, content: str, category: str, tags: str):
+def update_note_file(original_relative_path: Optional[str], title: str, content: str, category: str, tags: List[str]):
     """根据可能变化的分类与标题，写入新文件。如果路径变化，删除旧文件。返回新的相对路径。"""
     new_rel_path = save_note_to_file(title, content, category, tags)
     try:
