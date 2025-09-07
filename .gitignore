@@ -1,0 +1,13 @@
+# 本地数据与生成内容
+notes/
+data/*.db
+__pycache__/
+
+# 虚拟环境与编辑器
+.venv/
+.env
+.env.*
+.idea/
+.vscode/
+
+
