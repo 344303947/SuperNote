@@ -117,22 +117,78 @@ def get_ai_client(request: Request):
 def extract_category_and_tags(content: str) -> tuple:
     """使用 AI 分析内容，返回分类和标签"""
     try:
+        # 收集现有分类与标签（用于优先匹配）
+        cursor.execute(
+            """
+            SELECT category, COUNT(1)
+            FROM notes
+            WHERE category IS NOT NULL AND category != ''
+            GROUP BY category
+            ORDER BY COUNT(1) DESC
+            """
+        )
+        existing_categories = [r[0] for r in cursor.fetchall()][:200]
+        cursor.execute("SELECT tags FROM notes WHERE tags IS NOT NULL AND tags != ''")
+        tag_counter = {}
+        for (tags_str,) in cursor.fetchall():
+            for t in [x.strip() for x in tags_str.split(',') if x.strip()]:
+                tag_counter[t] = tag_counter.get(t, 0) + 1
+        existing_tags = [k for k, _ in sorted(tag_counter.items(), key=lambda kv: kv[1], reverse=True)][:300]
+
         response = client.chat.completions.create(
             model=CURRENT_MODEL,
             messages=[
-                {"role": "system", "content": """
-                    你是一个智能笔记分类助手。
-                    请根据以下笔记内容，提取一个主要分类（如：技术、生活、学习、项目、会议）和 1-3 个标签（如：Python, AI, 2024）。
-                    输出格式必须为 JSON，如：
-                    {"category": "技术", "tags": ["Python", "AI"]}
-                """},
+                {"role": "system", "content": (
+                    "你是一个智能笔记分类助手。\n"
+                    "- 优先从‘现有分类列表’中选择最合适的一个分类；若都不匹配再给出一个新的合理分类。\n"
+                    "- 优先从‘现有标签列表’中选择最相关的 1-3 个标签；若都不匹配再给出 1-3 个新的合理中文标签。\n"
+                    "- 仅输出 JSON，不要任何解释。\n"
+                    "- JSON 格式：{\"category\":\"...\",\"tags\":[\"...\",\"...\"]}\n"
+                    f"现有分类列表：{', '.join(existing_categories) if existing_categories else '（暂无）'}\n"
+                    f"现有标签列表：{', '.join(existing_tags) if existing_tags else '（暂无）'}\n"
+                )},
                 {"role": "user", "content": content[:1000]}  # 限长
             ],
             temperature=0.3,
             max_tokens=200
         )
-        result = json.loads(response.choices[0].message.content.strip())
-        return result["category"], result["tags"]
+        raw = (response.choices[0].message.content or "").strip()
+        # 兼容模型输出被 ```json 包裹或含解释文本
+        txt = raw
+        if txt.startswith("```"):
+            # ```json\n...\n```
+            try:
+                txt = txt.split("\n", 1)[1]
+                if txt.endswith("```"):
+                    txt = txt.rsplit("```", 1)[0]
+                txt = txt.strip()
+            except Exception:
+                txt = raw
+        # 直接尝试解析；失败则从文本中抓取第一个 JSON 对象
+        obj = None
+        try:
+            obj = json.loads(txt)
+        except Exception:
+            try:
+                import re as _re
+                m = _re.search(r"\{[\s\S]*\}", txt)
+                if m:
+                    obj = json.loads(m.group(0))
+            except Exception:
+                obj = None
+        if not isinstance(obj, dict):
+            raise ValueError("未能解析分类 JSON")
+        category = str(obj.get("category", "其他")).strip() or "其他"
+        tags_val = obj.get("tags", [])
+        if isinstance(tags_val, str):
+            tags_list = [t.strip() for t in tags_val.split(',') if t.strip()]
+        elif isinstance(tags_val, list):
+            tags_list = [str(t).strip() for t in tags_val if str(t).strip()]
+        else:
+            tags_list = []
+        if not tags_list:
+            tags_list = ["未分类"]
+        return category, tags_list
     except Exception as e:
         print("AI 分析失败:", e)
         return "其他", ["未分类"]
@@ -449,41 +505,98 @@ async def list_tags():
 async def optimize_text(req: OptimizeRequest, request: Request):
     """调用大模型同时进行正文优化并生成标题，允许自定义提示词。
     期望模型输出 JSON：{"title": "...", "content": "..."}
+    同时后端会基于优化后的正文自动提取 {category, tags} 并一并返回
     """
     _ = get_ai_client(request)
 
     # 优先使用请求中的自定义提示词，否则从文件加载默认提示词
     base_prompt = (req.prompt or read_default_prompt()).strip()
+    # 模式判断：除非用户明确要求改写，否则只做分析（知识图谱 + 知识点），不改写原文
+    normalized = base_prompt.lower()
+    should_rewrite = any(k in normalized for k in ["rewrite", "重写", "改写", "优化表达", "润色", "重构表述"])  # 触发改写关键词
     try:
-        response = client.chat.completions.create(
-            model=CURRENT_MODEL,
-            messages=[
-                {"role": "system", "content": (
-                    "你是一个专业的中文写作与知识整理助手。请在忠实原意的前提下优化表达、结构与条理；"
-                    "同时为文章生成一个10-20字的简洁中文标题。"
-                )},
-                {"role": "user", "content": (
-                    "请严格输出JSON（不要解释），格式如下：\n"
-                    '{"title":"示例标题","content":"示例优化正文"}\n\n'
-                    f"提示：{base_prompt}\n\n原文：\n{req.content[:8000]}"
-                )}
-            ],
-            temperature=0.3,
-            max_tokens=2048
-        )
-        raw = response.choices[0].message.content.strip()
-        title = ""
-        optimized = raw
-        try:
-            obj = json.loads(raw)
-            title = (obj.get("title") or "").strip()
-            optimized = (obj.get("content") or "").strip()
-        except Exception:
-            # 兼容非 JSON 输出：取首行为标题，全文为优化内容
-            lines = [x.strip() for x in raw.splitlines() if x.strip()]
-            if lines:
-                title = lines[0][:20]
-        return {"title": title, "optimized": optimized}
+        if should_rewrite:
+            # 原有改写流程
+            response = client.chat.completions.create(
+                model=CURRENT_MODEL,
+                messages=[
+                    {"role": "system", "content": (
+                        "你是一个专业的中文写作与知识整理助手。请在忠实原意的前提下优化表达、结构与条理；"
+                        "同时为文章生成一个10-20字的简洁中文标题。"
+                    )},
+                    {"role": "user", "content": (
+                        "请严格输出JSON（不要解释），格式如下：\n"
+                        '{"title":"示例标题","content":"示例优化正文"}\n\n'
+                        f"提示：{base_prompt}\n\n原文：\n{req.content[:8000]}"
+                    )}
+                ],
+                temperature=0.3,
+                max_tokens=2048
+            )
+            raw = response.choices[0].message.content.strip()
+            title = ""
+            optimized = raw
+            try:
+                obj = json.loads(raw)
+                title = (obj.get("title") or "").strip()
+                optimized = (obj.get("content") or "").strip()
+            except Exception:
+                lines = [x.strip() for x in raw.splitlines() if x.strip()]
+                if lines:
+                    title = lines[0][:20]
+            base_for_extract = optimized if (optimized and optimized.strip()) else req.content
+            try:
+                cat, tag_list = extract_category_and_tags(base_for_extract)
+            except Exception:
+                cat, tag_list = ("其他", ["未分类"])
+            return {"title": title, "optimized": optimized, "category": cat, "tags": tag_list, "mode": "rewrite"}
+        else:
+            # 默认仅分析：输出知识点与知识图谱，不改写正文
+            response = client.chat.completions.create(
+                model=CURRENT_MODEL,
+                messages=[
+                    {"role": "system", "content": (
+                        "你是一个专业的中文知识整理助手。默认不要改写用户原文；"
+                        "请基于原文抽取‘知识点总结’与‘知识图谱’，并生成10-20字中文标题。"
+                    )},
+                    {"role": "user", "content": (
+                        "请严格输出JSON（不要解释），格式如下：\n"
+                        '{"title":"示例标题","key_points":["要点1","要点2"],"graph":{"nodes":[{"id":"概念A"},{"id":"概念B"}],"edges":[{"source":"概念A","target":"概念B","relation":"包含/因果/引用"}]}}\n\n'
+                        f"提示：{base_prompt}\n\n原文：\n{req.content[:8000]}"
+                    )}
+                ],
+                temperature=0.2,
+                max_tokens=2048
+            )
+            raw = response.choices[0].message.content.strip()
+            title = ""
+            key_points = []
+            graph = {"nodes": [], "edges": []}
+            try:
+                obj = json.loads(raw)
+                title = (obj.get("title") or "").strip()
+                key_points = obj.get("key_points") or []
+                graph = obj.get("graph") or {"nodes": [], "edges": []}
+            except Exception:
+                lines = [x.strip() for x in raw.splitlines() if x.strip()]
+                if lines:
+                    title = lines[0][:20]
+            # 不改写正文：optimized 回传原文
+            optimized = (req.content or "").strip()
+            try:
+                base_for_extract = req.content
+                cat, tag_list = extract_category_and_tags(base_for_extract)
+            except Exception:
+                cat, tag_list = ("其他", ["未分类"])
+            return {
+                "title": title,
+                "optimized": optimized,
+                "category": cat,
+                "tags": tag_list,
+                "key_points": key_points,
+                "graph": graph,
+                "mode": "analyze"
+            }
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"优化失败: {str(e)}")
 

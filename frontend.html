@@ -106,7 +106,7 @@
 
       <!-- 新建笔记模态框 -->
       <div id="newNoteModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden">
-        <div class="bg-white p-6 rounded-lg w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-xl draggable-modal" id="newNoteModalCard">
+        <div class="bg-white p-6 rounded-lg w-[90vw] max-w-none max-h-[90vh] overflow-y-auto shadow-xl draggable-modal" id="newNoteModalCard">
           <div class="flex items-center justify-between drag-handle select-none">
             <h2 class="text-2xl font-bold py-2">新建笔记</h2>
             <button id="cancelBtn" class="ml-4 px-3 py-1 border rounded hover:bg-gray-100">关闭</button>
@@ -155,7 +155,7 @@
       
       <!-- 预览笔记模态框 -->
       <div id="viewNoteModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden">
-        <div class="bg-white p-6 rounded-lg w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-xl draggable-modal" id="viewNoteModalCard">
+        <div class="bg-white p-6 rounded-lg w-[90vw] max-w-none max-h-[90vh] overflow-y-auto shadow-xl draggable-modal" id="viewNoteModalCard">
           <div class="flex items-start justify-between mb-2 drag-handle select-none">
             <h2 id="viewTitle" class="text-2xl font-bold text-gray-800">笔记预览</h2>
             <button id="closeViewBtn" class="ml-4 px-3 py-1 border rounded hover:bg-gray-100">关闭</button>
@@ -522,7 +522,7 @@
             const nt = document.getElementById('noteTags');
             if (nc) nc.value = '';
             if (nt) nt.value = '';
-            await loadNotes();
+            await Promise.all([loadNotes(), loadStats()]);
           } else {
             const err = await res.json().catch(() => ({}));
             alert("保存失败" + (err && err.error ? `：${err.error}` : ""));
@@ -575,8 +575,25 @@
             const data = await res.json();
             const optimized = (data && data.optimized) || '';
             const title = (data && data.title) || '';
+            const category = (data && data.category) || '';
+            const tags = (data && data.tags);
             if (optimized) noteContentEl.value = optimized;
             if (title) noteTitleEl.value = title;
+            const nc = document.getElementById('noteCategory');
+            const nt = document.getElementById('noteTags');
+            if (nc && category) nc.value = category;
+            if (nt && (Array.isArray(tags) ? tags.length : (typeof tags === 'string' && tags.trim().length))) {
+              nt.value = Array.isArray(tags) ? tags.join(', ') : String(tags);
+            }
+            // 显示提示：已回填分类与标签
+            try {
+              if (newOptStatus) {
+                const tagStr = Array.isArray(tags) ? tags.join(', ') : (typeof tags === 'string' ? tags : '');
+                newOptStatus.textContent = `已提取分类：${category || '（无）'}；标签：${tagStr || '（无）'}`;
+                newOptStatus.classList.remove('hidden');
+                setTimeout(()=>{ newOptStatus.classList.add('hidden'); }, 2500);
+              }
+            } catch (_) {}
           } catch (_) {
             alert('网络异常，优化失败');
           } finally {
@@ -849,11 +866,29 @@
             }
             const data = await res.json();
             const optimized = (data && data.optimized) || '';
+            const category = (data && data.category) || '';
+            const tags = (data && data.tags);
             if (optimized) {
               setViewRaw(optimized);
               saveOptimizedBtn.disabled = false;
               enterPreviewMode(false);
             }
+            // 回填分类/标签（编辑区）
+            const ec = document.getElementById('editCategory');
+            const eg = document.getElementById('editTags');
+            if (ec && category) ec.value = category;
+            if (eg && (Array.isArray(tags) ? tags.length : (typeof tags === 'string' && tags.trim().length))) {
+              eg.value = Array.isArray(tags) ? tags.join(', ') : String(tags);
+            }
+            // 提示
+            try {
+              if (optStatus) {
+                const tagStr = Array.isArray(tags) ? tags.join(', ') : (typeof tags === 'string' ? tags : '');
+                optStatus.textContent = `已提取分类：${category || '（无）'}；标签：${tagStr || '（无）'}`;
+                optStatus.classList.remove('hidden');
+                setTimeout(()=>{ optStatus.classList.add('hidden'); }, 2500);
+              }
+            } catch (_) {}
           } catch (e) {
             alert('网络异常，优化失败');
           } finally {

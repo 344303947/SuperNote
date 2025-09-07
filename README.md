@@ -105,9 +105,9 @@ python main.py
 
 - GET `/search?query=关键词`：全文搜索（标题/内容/分类/标签）
 
-- POST `/optimize`：AI 优化正文并生成标题
+- POST `/optimize`：AI 优化正文并生成标题，同时自动抽取分类与标签
   - 请求体：`{ content: string, prompt?: string }`
-  - 响应：`{ title: string, optimized: string }`
+  - 响应：`{ title: string, optimized: string, category: string, tags: string[] }`
 
 - GET `/categories`：返回已有分类（去重、按频次倒序）
 - GET `/tags`：返回已有标签（去重、按频次倒序）
