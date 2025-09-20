@@ -25,6 +25,63 @@
       cursor: move;
       user-select: none;
     }
+    /* 全屏模式样式 */
+    .fullscreen-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 60;
+      background: white;
+      overflow: hidden;
+    }
+    .fullscreen-modal .modal-content {
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .fullscreen-modal .modal-header {
+      flex-shrink: 0;
+      padding: 1rem;
+      border-bottom: 1px solid #e5e7eb;
+      background: #f9fafb;
+    }
+    .fullscreen-modal .modal-body {
+      flex: 1;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .fullscreen-modal .modal-footer {
+      flex-shrink: 0;
+      padding: 1rem;
+      border-top: 1px solid #e5e7eb;
+      background: #f9fafb;
+    }
+    .fullscreen-modal .editor-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .fullscreen-modal .editor-textarea {
+      flex: 1;
+      min-height: 400px;
+      resize: none;
+      border: none;
+      outline: none;
+      font-family: 'Courier New', monospace;
+      font-size: 14px;
+      padding: 1rem;
+    }
+    .fullscreen-modal .preview-container {
+      flex: 1;
+      overflow-y: auto;
+      min-height: 400px;
+      padding: 1rem;
+      background: #f9fafb;
+    }
     /* 模糊搜索下拉建议 */
     .suggest-list { position: absolute; z-index: 60; background: #fff; border: 1px solid #e5e7eb; border-radius: 0.375rem; box-shadow: 0 10px 15px rgba(0,0,0,0.08); max-height: 220px; overflow-y: auto; width: 100%; }
     .suggest-item { padding: 6px 10px; font-size: 14px; cursor: pointer; }
@@ -158,12 +215,19 @@
         <div class="bg-white p-6 rounded-lg w-[90vw] max-w-none max-h-[90vh] overflow-y-auto shadow-xl draggable-modal" id="viewNoteModalCard">
           <div class="flex items-start justify-between mb-2 drag-handle select-none">
             <h2 id="viewTitle" class="text-2xl font-bold text-gray-800">笔记预览</h2>
-            <button id="closeViewBtn" class="ml-4 px-3 py-1 border rounded hover:bg-gray-100">关闭</button>
+            <div class="flex gap-2">
+              <button id="fullscreenBtn" class="px-3 py-1 border rounded hover:bg-gray-100" title="全屏显示">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+                </svg>
+              </button>
+              <button id="closeViewBtn" class="ml-4 px-3 py-1 border rounded hover:bg-gray-100">关闭</button>
+            </div>
           </div>
           <hr class="mb-2" />
           <div class="mb-2 flex gap-2">
-            <button id="toggleEditBtn" class="px-3 py-1 border rounded hover:bg-gray-100">编辑模式</button>
-            <button id="togglePreviewBtn" class="px-3 py-1 border rounded hover:bg-gray-100 hidden">预览模式</button>
+            <button id="toggleEditBtn" class="px-3 py-1 border rounded hover:bg-gray-100 hidden">编辑模式</button>
+            <button id="togglePreviewBtn" class="px-3 py-1 border rounded hover:bg-gray-100">预览模式</button>
           </div>
           <div class="grid md:grid-cols-3 gap-3 mb-3">
             <div>
@@ -179,8 +243,8 @@
               <input id="editTags" class="w-full p-2 border rounded" placeholder="例如：Python, AI" />
             </div>
           </div>
-          <textarea id="viewEditor" class="w-full h-64 p-2 border rounded font-mono text-sm hidden" style="font-family:'Courier New', monospace;"></textarea>
-          <div id="viewPreview" class="whitespace-normal break-words bg-gray-50 p-4 rounded border text-sm overflow-x-auto"></div>
+          <textarea id="viewEditor" class="w-full h-80 p-2 border rounded font-mono text-sm hidden" style="font-family:'Courier New', monospace;"></textarea>
+          <div id="viewPreview" class="whitespace-normal break-words bg-gray-50 p-4 rounded border text-sm overflow-x-auto h-80"></div>
           <div class="mt-4 border-t pt-4">
             <label class="block text-sm text-gray-700 mb-2">AI 优化提示词（可选）</label>
             <input id="optPrompt" type="text" placeholder="帮助用户完善笔记文档，并整理归类总结" class="w-full mb-3 p-2 border rounded" />
@@ -190,6 +254,62 @@
               <button id="deleteNoteBtn" class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">删除</button>
             </div>
             <div id="optStatus" class="text-sm text-gray-500 mt-2 hidden">正在调用 AI 优化…</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 全屏预览模态框 -->
+      <div id="fullscreenModal" class="fullscreen-modal hidden">
+        <div class="modal-content">
+          <div class="modal-header">
+            <div class="flex items-center justify-between">
+              <h2 id="fullscreenTitle" class="text-2xl font-bold text-gray-800">笔记全屏预览</h2>
+              <div class="flex gap-2">
+                <button id="exitFullscreenBtn" class="px-3 py-1 border rounded hover:bg-gray-100" title="退出全屏">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="mt-3 flex gap-2">
+              <button id="fullscreenToggleEditBtn" class="px-3 py-1 border rounded hover:bg-gray-100 hidden">编辑模式</button>
+              <button id="fullscreenTogglePreviewBtn" class="px-3 py-1 border rounded hover:bg-gray-100">预览模式</button>
+            </div>
+            <div class="mt-3 grid md:grid-cols-3 gap-3">
+              <div>
+                <label class="block text-sm text-gray-700 mb-1">标题</label>
+                <input id="fullscreenEditTitle" type="text" class="w-full p-2 border rounded" placeholder="编辑标题" />
+              </div>
+              <div>
+                <label class="block text-sm text-gray-700 mb-1">分类</label>
+                <input id="fullscreenEditCategory" class="w-full p-2 border rounded" placeholder="选择或输入分类" />
+              </div>
+              <div>
+                <label class="block text-sm text-gray-700 mb-1">标签（逗号分隔）</label>
+                <input id="fullscreenEditTags" class="w-full p-2 border rounded" placeholder="例如：Python, AI" />
+              </div>
+            </div>
+          </div>
+          <div class="modal-body">
+            <div class="editor-container">
+              <textarea id="fullscreenEditor" class="editor-textarea w-full p-4 border-0 font-mono text-sm resize-none focus:outline-none" style="font-family:'Courier New', monospace;"></textarea>
+              <div id="fullscreenPreview" class="preview-container p-4 bg-gray-50 border-0 text-sm"></div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <div class="flex items-center justify-between">
+              <div>
+                <label class="block text-sm text-gray-700 mb-2">AI 优化提示词（可选）</label>
+                <input id="fullscreenOptPrompt" type="text" placeholder="帮助用户完善笔记文档，并整理归类总结" class="w-full mb-3 p-2 border rounded" />
+              </div>
+              <div class="flex gap-3">
+                <button id="fullscreenOptimizeBtn" class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700">AI 优化</button>
+                <button id="fullscreenSaveBtn" class="px-4 py-2 border rounded hover:bg-gray-100">保存更新</button>
+                <button id="fullscreenDeleteBtn" class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">删除</button>
+              </div>
+            </div>
+            <div id="fullscreenOptStatus" class="text-sm text-gray-500 mt-2 hidden">正在调用 AI 优化…</div>
           </div>
         </div>
       </div>
@@ -330,6 +450,24 @@
       const newOptPrompt = document.getElementById("newOptPrompt");
       const newOptStatus = document.getElementById("newOptStatus");
 
+      // 全屏模态框相关元素
+      const fullscreenModal = document.getElementById("fullscreenModal");
+      const fullscreenBtn = document.getElementById("fullscreenBtn");
+      const exitFullscreenBtn = document.getElementById("exitFullscreenBtn");
+      const fullscreenTitle = document.getElementById("fullscreenTitle");
+      const fullscreenEditor = document.getElementById("fullscreenEditor");
+      const fullscreenPreview = document.getElementById("fullscreenPreview");
+      const fullscreenToggleEditBtn = document.getElementById("fullscreenToggleEditBtn");
+      const fullscreenTogglePreviewBtn = document.getElementById("fullscreenTogglePreviewBtn");
+      const fullscreenEditTitle = document.getElementById("fullscreenEditTitle");
+      const fullscreenEditCategory = document.getElementById("fullscreenEditCategory");
+      const fullscreenEditTags = document.getElementById("fullscreenEditTags");
+      const fullscreenOptimizeBtn = document.getElementById("fullscreenOptimizeBtn");
+      const fullscreenSaveBtn = document.getElementById("fullscreenSaveBtn");
+      const fullscreenDeleteBtn = document.getElementById("fullscreenDeleteBtn");
+      const fullscreenOptPrompt = document.getElementById("fullscreenOptPrompt");
+      const fullscreenOptStatus = document.getElementById("fullscreenOptStatus");
+
       // 缓存分类/标签列表供建议
       let cachedCategories = [];
       let cachedTags = [];
@@ -352,6 +490,9 @@
         currentViewRaw = String(text || '');
         if (viewEditor) viewEditor.value = currentViewRaw;
         if (viewPreview) viewPreview.innerHTML = renderMarkdown(currentViewRaw);
+        // 同步到全屏编辑器
+        if (fullscreenEditor) fullscreenEditor.value = currentViewRaw;
+        if (fullscreenPreview) fullscreenPreview.innerHTML = renderMarkdown(currentViewRaw);
       }
       function enterEditMode() {
         if (!viewEditor || !viewPreview) return;
@@ -369,8 +510,32 @@
         if (toggleEditBtn) toggleEditBtn.classList.remove('hidden');
         if (togglePreviewBtn) togglePreviewBtn.classList.add('hidden');
       }
+
+      // 全屏模式切换函数
+      function enterFullscreenEditMode() {
+        if (!fullscreenEditor || !fullscreenPreview) return;
+        fullscreenEditor.classList.remove('hidden');
+        fullscreenPreview.classList.add('hidden');
+        if (fullscreenToggleEditBtn) fullscreenToggleEditBtn.classList.add('hidden');
+        if (fullscreenTogglePreviewBtn) fullscreenTogglePreviewBtn.classList.remove('hidden');
+      }
+
+      function enterFullscreenPreviewMode(syncFromEditor = false) {
+        if (!fullscreenEditor || !fullscreenPreview) return;
+        if (syncFromEditor) currentViewRaw = fullscreenEditor.value || '';
+        fullscreenPreview.innerHTML = renderMarkdown(currentViewRaw);
+        fullscreenEditor.classList.add('hidden');
+        fullscreenPreview.classList.remove('hidden');
+        if (fullscreenToggleEditBtn) fullscreenToggleEditBtn.classList.remove('hidden');
+        if (fullscreenTogglePreviewBtn) fullscreenTogglePreviewBtn.classList.add('hidden');
+      }
+
       if (toggleEditBtn) toggleEditBtn.onclick = () => enterEditMode();
       if (togglePreviewBtn) togglePreviewBtn.onclick = () => enterPreviewMode(true);
+
+      // 全屏模式切换事件
+      if (fullscreenToggleEditBtn) fullscreenToggleEditBtn.onclick = () => enterFullscreenEditMode();
+      if (fullscreenTogglePreviewBtn) fullscreenTogglePreviewBtn.onclick = () => enterFullscreenPreviewMode(true);
 
       // 新建：预览切换
       if (toggleNewPreviewBtn && noteContentEl && notePreviewEl) {
@@ -613,6 +778,56 @@
       // 启用拖拽（预览弹窗）并在打开时居中
       makeModalDraggable(viewNoteModalCard, viewNoteModalCard ? viewNoteModalCard.querySelector('.drag-handle') : null, viewNoteModal);
 
+      // 全屏功能
+      if (fullscreenBtn) {
+        fullscreenBtn.onclick = () => {
+          // 同步数据到全屏模态框
+          const noteId = viewNoteModal.getAttribute('data-note-id');
+          const noteTitle = viewNoteModal.getAttribute('data-note-title');
+          
+          fullscreenTitle.textContent = noteTitle || '笔记全屏预览';
+          fullscreenModal.setAttribute('data-note-id', noteId || '');
+          fullscreenModal.setAttribute('data-note-title', noteTitle || '');
+          
+          // 同步编辑字段
+          fullscreenEditTitle.value = document.getElementById('editTitle')?.value || '';
+          fullscreenEditCategory.value = document.getElementById('editCategory')?.value || '';
+          fullscreenEditTags.value = document.getElementById('editTags')?.value || '';
+          fullscreenOptPrompt.value = optPrompt?.value || '';
+          
+          // 同步内容
+          setViewRaw(currentViewRaw);
+          
+          // 显示全屏模态框
+          fullscreenModal.classList.remove('hidden');
+          document.body.style.overflow = 'hidden';
+          
+          // 默认进入编辑模式
+          enterFullscreenEditMode();
+        };
+      }
+
+      // 退出全屏
+      if (exitFullscreenBtn) {
+        exitFullscreenBtn.onclick = () => {
+          fullscreenModal.classList.add('hidden');
+          document.body.style.overflow = '';
+          
+          // 同步数据回普通模态框
+          if (fullscreenEditor && !fullscreenEditor.classList.contains('hidden')) {
+            currentViewRaw = fullscreenEditor.value || '';
+            if (viewEditor) viewEditor.value = currentViewRaw;
+            if (viewPreview) viewPreview.innerHTML = renderMarkdown(currentViewRaw);
+          }
+          
+          // 同步编辑字段
+          if (document.getElementById('editTitle')) document.getElementById('editTitle').value = fullscreenEditTitle.value;
+          if (document.getElementById('editCategory')) document.getElementById('editCategory').value = fullscreenEditCategory.value;
+          if (document.getElementById('editTags')) document.getElementById('editTags').value = fullscreenEditTags.value;
+          if (optPrompt) optPrompt.value = fullscreenOptPrompt.value;
+        };
+      }
+
       // 退出登录
       logoutBtn.onclick = async () => {
         try {
@@ -815,7 +1030,7 @@
 
           viewTitle.textContent = noteTitle;
           setViewRaw(contentText || '未能加载到该笔记的正文内容。');
-          enterPreviewMode(false);
+          enterEditMode(); // 修改：默认进入编辑模式而不是预览模式
           // 记录到 modal 元素上，供后续保存使用
           viewNoteModal.setAttribute('data-note-id', noteId || '');
           viewNoteModal.setAttribute('data-note-title', noteTitle || '');
@@ -975,14 +1190,147 @@
         };
       }
 
+      // 全屏模式下的AI优化
+      if (fullscreenOptimizeBtn) {
+        fullscreenOptimizeBtn.onclick = async () => {
+          const content = currentViewRaw || '';
+          if (!content.trim()) {
+            alert('没有可优化的内容');
+            return;
+          }
+          const prompt = (fullscreenOptPrompt && fullscreenOptPrompt.value.trim()) || '帮助用户完善笔记文档，并整理归类总结';
+          try {
+            fullscreenOptStatus.classList.remove('hidden');
+            fullscreenOptimizeBtn.disabled = true;
+            fullscreenSaveBtn.disabled = true;
+            const res = await fetch(`${API_BASE}/optimize`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ content, prompt })
+            });
+            if (!res.ok) {
+              let msg = '';
+              try {
+                const err = await res.json();
+                msg = err?.detail || err?.error || '';
+              } catch (_) {
+                try { msg = await res.text(); } catch (_) { msg = ''; }
+              }
+              alert('优化失败' + (msg ? `：${msg}` : `（HTTP ${res.status}）`));
+              return;
+            }
+            const data = await res.json();
+            const optimized = (data && data.optimized) || '';
+            const category = (data && data.category) || '';
+            const tags = (data && data.tags);
+            if (optimized) {
+              setViewRaw(optimized);
+              fullscreenSaveBtn.disabled = false;
+              enterFullscreenPreviewMode(false);
+            }
+            // 回填分类/标签
+            if (fullscreenEditCategory && category) fullscreenEditCategory.value = category;
+            if (fullscreenEditTags && (Array.isArray(tags) ? tags.length : (typeof tags === 'string' && tags.trim().length))) {
+              fullscreenEditTags.value = Array.isArray(tags) ? tags.join(', ') : String(tags);
+            }
+            // 提示
+            try {
+              if (fullscreenOptStatus) {
+                const tagStr = Array.isArray(tags) ? tags.join(', ') : (typeof tags === 'string' ? tags : '');
+                fullscreenOptStatus.textContent = `已提取分类：${category || '（无）'}；标签：${tagStr || '（无）'}`;
+                fullscreenOptStatus.classList.remove('hidden');
+                setTimeout(()=>{ fullscreenOptStatus.classList.add('hidden'); }, 2500);
+              }
+            } catch (_) {}
+          } catch (e) {
+            alert('网络异常，优化失败');
+          } finally {
+            fullscreenOptStatus.classList.add('hidden');
+            fullscreenOptimizeBtn.disabled = false;
+          }
+        };
+      }
+
+      // 全屏模式下的保存
+      if (fullscreenSaveBtn) {
+        fullscreenSaveBtn.onclick = async () => {
+          const noteId = fullscreenModal.getAttribute('data-note-id');
+          if (!noteId) {
+            alert('未获取到笔记 ID，无法保存');
+            return;
+          }
+          const title = (fullscreenEditTitle?.value || fullscreenModal.getAttribute('data-note-title') || '').trim();
+          const category = (fullscreenEditCategory?.value || '').trim();
+          const tags = (fullscreenEditTags?.value || '').trim();
+          let content = currentViewRaw || '';
+          if (fullscreenEditor && !fullscreenEditor.classList.contains('hidden')) {
+            content = fullscreenEditor.value || '';
+            currentViewRaw = content;
+          }
+          try {
+            fullscreenSaveBtn.disabled = true;
+            const res = await fetch(`${API_BASE}/note`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: Number(noteId), title, content, category, tags })
+            });
+            if (res.ok) {
+              alert('已保存优化/编辑结果');
+              await Promise.all([loadNotes(), loadStats()]);
+              fullscreenModal.classList.add('hidden');
+              document.body.style.overflow = '';
+              viewNoteModal.classList.add('hidden');
+            } else {
+              const err = await res.json().catch(() => ({}));
+              alert('保存失败' + (err && err.detail ? `：${err.detail}` : ''));
+            }
+          } catch (_) {
+            alert('网络异常，保存失败');
+          } finally {
+            fullscreenSaveBtn.disabled = false;
+          }
+        };
+      }
+
+      // 全屏模式下的删除
+      if (fullscreenDeleteBtn) {
+        fullscreenDeleteBtn.onclick = async () => {
+          const noteId = fullscreenModal.getAttribute('data-note-id');
+          if (!noteId) {
+            alert('未获取到笔记 ID，无法删除');
+            return;
+          }
+          if (!confirm('确定要删除这条笔记吗？此操作不可恢复。')) return;
+          try {
+            const res = await fetch(`${API_BASE}/note?id=${encodeURIComponent(noteId)}`, { method: 'DELETE' });
+            if (res.ok) {
+              alert('已删除');
+              await Promise.all([loadNotes(), loadStats()]);
+              fullscreenModal.classList.add('hidden');
+              document.body.style.overflow = '';
+              viewNoteModal.classList.add('hidden');
+            } else {
+              let msg = '';
+              try { const err = await res.json(); msg = err?.detail || err?.error || ''; } catch(_) {}
+              alert('删除失败' + (msg ? `：${msg}` : `（HTTP ${res.status}）`));
+            }
+          } catch (_) {
+            alert('网络异常，删除失败');
+          }
+        };
+      }
+
       // 初始加载
       await loadNotes();
 
       // 绑定模糊建议到输入框
       attachFuzzySuggest(document.getElementById('noteCategory'), () => cachedCategories, false);
       attachFuzzySuggest(document.getElementById('editCategory'), () => cachedCategories, false);
-      attachFuzzySuggest(document.getElementById('noteTags'), () => cachedTags, true);
       attachFuzzySuggest(document.getElementById('editTags'), () => cachedTags, true);
+      attachFuzzySuggest(document.getElementById('noteTags'), () => cachedTags, true);
+      // 全屏模式的输入框也添加模糊搜索建议
+      attachFuzzySuggest(document.getElementById('fullscreenEditCategory'), () => cachedCategories, false);
+      attachFuzzySuggest(document.getElementById('fullscreenEditTags'), () => cachedTags, true);
     });
   </script>
 </body>
