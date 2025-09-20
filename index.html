@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="zh" class="h-full bg-gray-50">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>智能笔记管理器</title>
+  
+  <!-- 外部依赖 -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+  
+  <!-- 样式文件 -->
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="h-full font-sans">
+  <div class="container mx-auto px-4 py-8 max-w-6xl">
+    <!-- Header -->
+    <header class="text-center mb-10">
+      <h1 class="text-4xl font-bold text-gray-800 mb-2">🧠 智能笔记管理</h1>
+      <p class="text-gray-600">AI 自动分类，自动优化，一键存储，全文搜索，支持本地部署AI模型</p>
+    </header>
+
+    <!-- API 配置 -->
+    <div id="apiConfig" class="bg-white p-6 rounded-lg shadow mb-8 border border-gray-200">
+      <h2 class="text-xl font-semibold mb-4 text-gray-800">🔑 API 配置</h2>
+      <form id="loginForm" class="grid md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">API 地址</label>
+          <input type="url" id="apiUrl" placeholder="https://api.openai.com/v1" class="w-full search-input" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+          <input type="password" id="apiKey" placeholder="sk-..." class="w-full search-input" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">默认模型</label>
+          <select id="modelSelect" class="w-full search-input">
+            <option value="qwen3:30b-40k">qwen3:30b-40k</option>
+            <option value="Qwen3-Next-80B-A3B-Instruct">Qwen3-Next-80B-A3B-Instruct</option>
+            <option value="custom">自定义模型</option>
+          </select>
+          <input type="text" id="customModelInput" placeholder="输入自定义模型名称" class="w-full search-input mt-2 hidden" />
+        </div>
+        <div class="md:col-span-2 text-right">
+          <button type="submit" class="btn btn-primary">保存并登录</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- 主界面 -->
+    <div id="mainApp" class="hidden bg-white p-6 rounded-lg shadow">
+      <div class="flex flex-col md:flex-row gap-6 mb-6">
+        <div class="flex-1">
+          <input type="text" id="searchInput" placeholder="搜索笔记..." class="w-full search-input" />
+        </div>
+        <div class="flex gap-3 items-center">
+          <button id="newNoteBtn" class="btn btn-success">新建笔记</button>
+          <button id="logoutBtn" class="btn btn-outline">退出登录</button>
+        </div>
+      </div>
+
+      <!-- 主体 + 右侧词云 -->
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-6">
+        <!-- 列表区域 -->
+        <div class="md:col-span-9">
+          <div id="activeFilter" class="hidden mb-3 text-sm">
+            <span class="px-2 py-1 bg-blue-50 text-blue-700 rounded">已按 <span id="filterType"></span>：<span id="filterValue" class="font-semibold"></span> 过滤</span>
+            <button id="clearFilterBtn" class="ml-2 text-blue-600 hover:underline">清除过滤</button>
+          </div>
+          <div id="noteList" class="space-y-4">
+            <div class="text-gray-500 text-center py-10">暂无笔记</div>
+          </div>
+          <div id="pagination" class="flex justify-center items-center gap-2 mt-4"></div>
+        </div>
+        
+        <!-- 右侧词云 -->
+        <aside class="md:col-span-3">
+          <div class="border border-gray-200 rounded-lg p-4">
+            <h3 class="text-base font-semibold text-gray-800 mb-2">分类词云</h3>
+            <div id="catCloud" class="flex flex-wrap gap-2"></div>
+          </div>
+          <div class="border border-gray-200 rounded-lg p-4 mt-4">
+            <h3 class="text-base font-semibold text-gray-800 mb-2">标签词云</h3>
+            <div id="tagCloud" class="flex flex-wrap gap-2"></div>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <!-- 无 API 配置提示 -->
+    <div id="noConfig" class="text-center text-gray-500 py-10">
+      <p>请先配置 OpenAI API 地址和 Key</p>
+    </div>
+  </div>
+
+  <!-- 新建笔记模态框 -->
+  <div id="newNoteModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden">
+    <div class="modal-content w-[90vw] max-w-none max-h-[90vh] overflow-y-auto shadow-xl draggable-modal" id="newNoteModalCard">
+      <div class="flex items-center justify-between drag-handle select-none p-6 border-b">
+        <h2 class="text-2xl font-bold">新建笔记</h2>
+        <button id="cancelBtn" class="btn btn-outline">关闭</button>
+      </div>
+      
+      <div class="p-6">
+        <textarea id="noteContent" placeholder="输入笔记内容..." class="w-full h-64 p-2 border rounded font-mono text-sm" style="font-family: 'Courier New', monospace;"></textarea>
+        
+        <div class="mt-3 flex items-center justify-between">
+          <span class="text-sm text-gray-500">支持 Markdown</span>
+          <button id="toggleNewPreviewBtn" class="btn btn-outline">预览 Markdown</button>
+        </div>
+        
+        <div id="notePreview" class="mt-2 p-3 border rounded bg-gray-50 hidden overflow-x-auto"></div>
+        
+        <input type="text" id="noteTitle" placeholder="笔记标题" class="w-full mt-4 p-2 border rounded" />
+        
+        <div class="mt-3 grid md:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-sm text-gray-700 mb-1">分类（可选）</label>
+            <input id="noteCategory" placeholder="选择或输入分类" class="w-full p-2 border rounded" />
+          </div>
+          <div>
+            <label class="block text-sm text-gray-700 mb-1">标签（可选，逗号分隔）</label>
+            <input id="noteTags" placeholder="例如：Python, AI" class="w-full p-2 border rounded" />
+          </div>
+        </div>
+        
+        <div class="mt-4">
+          <label class="block text-sm text-gray-700 mb-2">AI 优化提示词（可选）</label>
+          <input id="newOptPrompt" type="text" placeholder="帮助用户完善笔记文档，并整理归类总结" class="w-full mb-3 p-2 border rounded" />
+          <div class="flex gap-3">
+            <button id="newOptimizeCombinedBtn" class="btn" style="background-color: #7c3aed; color: white;">AI 优化</button>
+          </div>
+          <div id="newOptStatus" class="text-sm text-gray-500 mt-2 hidden">正在调用 AI …</div>
+        </div>
+        
+        <div class="flex items-center justify-between mt-6">
+          <div id="saveStatus" class="flex items-center gap-2 text-gray-500 text-sm hidden">
+            <div class="spinner"></div>
+            <span>正在保存，AI 正在分析分类与标签，请稍候…</span>
+          </div>
+          <div class="flex justify-end gap-3">
+            <button id="cancelBtn2" class="btn btn-outline">取消</button>
+            <button id="saveNoteBtn" class="btn btn-primary">保存</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- 预览笔记模态框 -->
+  <div id="viewNoteModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden">
+    <div class="modal-content w-[90vw] max-w-none max-h-[90vh] overflow-y-auto shadow-xl draggable-modal" id="viewNoteModalCard">
+      <div class="flex items-start justify-between mb-2 drag-handle select-none p-6 border-b">
+        <h2 id="viewTitle" class="text-2xl font-bold text-gray-800">笔记预览</h2>
+        <div class="flex gap-2">
+          <button id="fullscreenBtn" class="btn btn-outline" title="全屏显示">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+            </svg>
+          </button>
+          <button id="closeViewBtn" class="btn btn-outline">关闭</button>
+        </div>
+      </div>
+      
+      <div class="p-6">
+        <div class="mb-2 flex gap-2">
+          <button id="toggleEditBtn" class="btn btn-outline hidden">编辑模式</button>
+          <button id="togglePreviewBtn" class="btn btn-outline">预览模式</button>
+        </div>
+        
+        <div class="grid md:grid-cols-3 gap-3 mb-3">
+          <div>
+            <label class="block text-sm text-gray-700 mb-1">标题</label>
+            <input id="editTitle" type="text" class="w-full p-2 border rounded" placeholder="编辑标题" />
+          </div>
+          <div>
+            <label class="block text-sm text-gray-700 mb-1">分类</label>
+            <input id="editCategory" class="w-full p-2 border rounded" placeholder="选择或输入分类" />
+          </div>
+          <div>
+            <label class="block text-sm text-gray-700 mb-1">标签（逗号分隔）</label>
+            <input id="editTags" class="w-full p-2 border rounded" placeholder="例如：Python, AI" />
+          </div>
+        </div>
+        
+        <textarea id="viewEditor" class="w-full h-80 p-2 border rounded font-mono text-sm hidden" style="font-family:'Courier New', monospace;"></textarea>
+        <div id="viewPreview" class="whitespace-normal break-words bg-gray-50 p-4 rounded border text-sm overflow-x-auto h-80"></div>
+        
+        <div class="mt-4 border-t pt-4">
+          <label class="block text-sm text-gray-700 mb-2">AI 优化提示词（可选）</label>
+          <input id="optPrompt" type="text" placeholder="帮助用户完善笔记文档，并整理归类总结" class="w-full mb-3 p-2 border rounded" />
+          <div class="flex gap-3">
+            <button id="optimizeBtn" class="btn" style="background-color: #7c3aed; color: white;">AI 优化</button>
+            <button id="saveOptimizedBtn" class="btn btn-success">保存</button>
+            <button id="deleteNoteBtn" class="btn btn-danger">删除</button>
+          </div>
+          <div id="optStatus" class="text-sm text-gray-500 mt-2 hidden">正在调用 AI 优化…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 全屏预览模态框 -->
+  <div id="fullscreenModal" class="fullscreen-modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="flex items-center justify-between">
+          <h2 id="fullscreenTitle" class="text-2xl font-bold text-gray-800">笔记全屏预览</h2>
+          <div class="flex gap-2">
+            <button id="exitFullscreenBtn" class="btn btn-outline" title="退出全屏">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="mt-3 flex gap-2">
+          <button id="fullscreenToggleEditBtn" class="btn btn-outline hidden">编辑模式</button>
+          <button id="fullscreenTogglePreviewBtn" class="btn btn-outline">预览模式</button>
+        </div>
+        <div class="mt-3 grid md:grid-cols-3 gap-3">
+          <div>
+            <label class="block text-sm text-gray-700 mb-1">标题</label>
+            <input id="fullscreenEditTitle" type="text" class="w-full p-2 border rounded" placeholder="编辑标题" />
+          </div>
+          <div>
+            <label class="block text-sm text-gray-700 mb-1">分类</label>
+            <input id="fullscreenEditCategory" class="w-full p-2 border rounded" placeholder="选择或输入分类" />
+          </div>
+          <div>
+            <label class="block text-sm text-gray-700 mb-1">标签（逗号分隔）</label>
+            <input id="fullscreenEditTags" class="w-full p-2 border rounded" placeholder="例如：Python, AI" />
+          </div>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div class="editor-container">
+          <textarea id="fullscreenEditor" class="editor-textarea w-full p-4 border-0 font-mono text-sm resize-none focus:outline-none" style="font-family:'Courier New', monospace;"></textarea>
+          <div id="fullscreenPreview" class="preview-container p-4 bg-gray-50 border-0 text-sm"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <div class="flex items-center justify-between">
+          <div>
+            <label class="block text-sm text-gray-700 mb-2">AI 优化提示词（可选）</label>
+            <input id="fullscreenOptPrompt" type="text" placeholder="帮助用户完善笔记文档，并整理归类总结" class="w-full mb-3 p-2 border rounded" />
+          </div>
+          <div class="flex gap-3">
+            <button id="fullscreenOptimizeBtn" class="btn" style="background-color: #7c3aed; color: white;">AI 优化</button>
+            <button id="fullscreenSaveBtn" class="btn btn-success">保存</button>
+            <button id="fullscreenDeleteBtn" class="btn btn-danger">删除</button>
+          </div>
+        </div>
+        <div id="fullscreenOptStatus" class="text-sm text-gray-500 mt-2 hidden">正在调用 AI 优化…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- JavaScript 模块 -->
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from typing import List, Optional
 from fastapi import FastAPI, Form, UploadFile, File, HTTPException, Depends, Request, Response
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from jose import jwt
@@ -97,25 +97,44 @@ def get_ai_client(request: Request):
         cookie = request.cookies.get("api_config")
     except Exception:
         cookie = None
-    if cookie:
-        try:
-            url, key = cookie.split("|", 1)
-            url = url.strip()
-            key = key.strip()
-            if url and key:
-                rebuilt = OpenAI(api_key=key, base_url=url)
-                # 轻量校验
-                rebuilt.models.list()
-                client = rebuilt
-                api_url = url
-                api_key = key
-                return client
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"AI 客户端重建失败：{str(e)}")
-    raise HTTPException(status_code=400, detail="未配置 AI API")
+    
+    # 如果没有cookie，直接返回未配置错误
+    if not cookie:
+        raise HTTPException(status_code=400, detail="未配置 AI API")
+    
+    try:
+        url, key = cookie.split("|", 1)
+        url = url.strip()
+        key = key.strip()
+        if not url or not key:
+            raise HTTPException(status_code=400, detail="未配置 AI API")
+        
+        rebuilt = OpenAI(api_key=key, base_url=url)
+        # 轻量校验
+        rebuilt.models.list()
+        client = rebuilt
+        api_url = url
+        api_key = key
+        return client
+    except HTTPException:
+        # 重新抛出HTTPException
+        raise
+    except Exception as e:
+        error_msg = str(e)
+        if "404" in error_msg or "upstream_error" in error_msg:
+            raise HTTPException(status_code=400, detail="AI服务连接失败，请检查API地址是否正确")
+        elif "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
+            raise HTTPException(status_code=400, detail="AI服务连接超时，请检查网络连接")
+        else:
+            raise HTTPException(status_code=400, detail=f"AI 客户端重建失败：{error_msg}")
 
-def extract_category_and_tags(content: str) -> tuple:
-    """使用 AI 分析内容，返回分类和标签"""
+def extract_category_and_tags(content: str, max_length: int = 4000) -> tuple:
+    """使用 AI 分析内容，返回分类和标签
+    
+    Args:
+        content: 要分析的内容
+        max_length: 最大分析长度，默认4000字符，用户自定义提示词时可设为20000
+    """
     try:
         # 收集现有分类与标签（用于优先匹配）
         cursor.execute(
@@ -140,14 +159,14 @@ def extract_category_and_tags(content: str) -> tuple:
             messages=[
                 {"role": "system", "content": (
                     "你是一个智能笔记分类助手。\n"
-                    "- 优先从‘现有分类列表’中选择最合适的一个分类；若都不匹配再给出一个新的合理分类。\n"
-                    "- 优先从‘现有标签列表’中选择最相关的 1-3 个标签；若都不匹配再给出 1-3 个新的合理中文标签。\n"
+                    "- 优先从'现有分类列表'中选择最合适的一个分类；若都不匹配再给出一个新的合理分类。\n"
+                    "- 优先从'现有标签列表'中选择最相关的 1-3 个标签；若都不匹配再给出 1-3 个新的合理中文标签。\n"
                     "- 仅输出 JSON，不要任何解释。\n"
                     "- JSON 格式：{\"category\":\"...\",\"tags\":[\"...\",\"...\"]}\n"
                     f"现有分类列表：{', '.join(existing_categories) if existing_categories else '（暂无）'}\n"
                     f"现有标签列表：{', '.join(existing_tags) if existing_tags else '（暂无）'}\n"
                 )},
-                {"role": "user", "content": content[:1000]}  # 限长
+                {"role": "user", "content": content[:max_length]}  # 使用传入的最大长度参数
             ],
             temperature=0.3,
             max_tokens=200
@@ -304,7 +323,9 @@ def parse_tags_to_list(tags_value: Optional[str]) -> List[str]:
 # FastAPI App
 # -----------------------------
 app = FastAPI()
-#app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# 挂载静态文件目录
+app.mount("/js", StaticFiles(directory="js"), name="js")
 
 # 临时保存配置（生产环境建议用数据库或环境变量）
 config_cache = {}
@@ -314,7 +335,11 @@ config_cache = {}
 # -----------------------------
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    return HTMLResponse(content=open("frontend.html", "r", encoding="utf-8").read())
+    return HTMLResponse(content=open("index.html", "r", encoding="utf-8").read())
+
+@app.get("/styles.css")
+async def get_styles():
+    return FileResponse("styles.css")
 
 @app.post("/api/login")
 async def login(login_data: LoginRequest, response: Response):
@@ -372,24 +397,50 @@ async def get_config(request: Request):
         return {"api_url": "", "api_key": "", "logged_in": False, "default_model": CURRENT_MODEL}
     try:
         url, key = cookie.split("|", 1)
-        return {"api_url": url, "api_key": key, "logged_in": True, "default_model": CURRENT_MODEL}
+        url = url.strip()
+        key = key.strip()
+        if not url or not key:
+            return {"api_url": "", "api_key": "", "logged_in": False, "default_model": CURRENT_MODEL}
+        
+        # 验证API配置是否有效
+        try:
+            test_client = OpenAI(api_key=key, base_url=url)
+            test_client.models.list()  # 测试连接
+            return {"api_url": url, "api_key": key, "logged_in": True, "default_model": CURRENT_MODEL}
+        except Exception as e:
+            # API配置无效，返回未登录状态
+            print(f"API配置验证失败: {e}")
+            return {"api_url": url, "api_key": key, "logged_in": False, "default_model": CURRENT_MODEL}
     except:
         return {"api_url": "", "api_key": "", "logged_in": False, "default_model": CURRENT_MODEL}
 
 @app.post("/api/note")
 async def create_note(note: Note, request: Request):
-    # 确保 AI 客户端可用（支持从 Cookie 自动重建）
-    _ = get_ai_client(request)
+    # 尝试获取 AI 客户端（可选）
+    ai_client = None
+    try:
+        ai_client = get_ai_client(request)
+    except:
+        # 没有AI客户端，继续处理但不进行自动分类
+        pass
 
-    # 处理分类/标签：优先使用用户提供值，否则调用 AI 分析
+    # 处理分类/标签：优先使用用户提供值，否则调用 AI 分析（如果有AI客户端）
     user_category = (note.category or '').strip()
     user_tags_list = parse_tags_to_list(note.tags or '')
     if not user_category or not user_tags_list:
-        category, tags = extract_category_and_tags(note.content)
-        if not user_category:
-            user_category = category
-        if not user_tags_list:
-            user_tags_list = tags
+        if ai_client:
+            # 有AI客户端，进行自动分析
+            category, tags = extract_category_and_tags(note.content)
+            if not user_category:
+                user_category = category
+            if not user_tags_list:
+                user_tags_list = tags
+        else:
+            # 没有AI客户端，使用默认值
+            if not user_category:
+                user_category = "未分类"
+            if not user_tags_list:
+                user_tags_list = ["无标签"]
 
     # 保存到数据库
     filename = save_note_to_file(note.title, note.content, user_category, user_tags_list)
@@ -407,7 +458,13 @@ async def update_note(req: UpdateNoteRequest, request: Request):
     优先使用用户传入的 category/tags；若未提供则对新内容调用 AI 提取。
     更新后会根据分类/标题变化迁移文件路径。
     """
-    _ = get_ai_client(request)
+    # 尝试获取 AI 客户端（可选）
+    ai_client = None
+    try:
+        ai_client = get_ai_client(request)
+    except:
+        # 没有AI客户端，继续处理但不进行自动分类
+        pass
 
     cursor.execute("SELECT id, title, content, category, tags, filename FROM notes WHERE id = ?", (req.id,))
     row = cursor.fetchone()
@@ -423,15 +480,23 @@ async def update_note(req: UpdateNoteRequest, request: Request):
     new_title = req.title if (req.title is not None and req.title.strip() != "") else current_title
     new_content = req.content if (req.content is not None) else current_content
 
-    # 分类与标签：优先使用用户提供，否则基于新内容自动提取
+    # 分类与标签：优先使用用户提供，否则基于新内容自动提取（如果有AI客户端）
     user_category = (req.category or '').strip()
     user_tags_list = parse_tags_to_list(req.tags or '')
     if not user_category or not user_tags_list:
-        category, tags_list = extract_category_and_tags(new_content)
-        if not user_category:
-            user_category = category
-        if not user_tags_list:
-            user_tags_list = tags_list
+        if ai_client:
+            # 有AI客户端，进行自动分析
+            category, tags_list = extract_category_and_tags(new_content)
+            if not user_category:
+                user_category = category
+            if not user_tags_list:
+                user_tags_list = tags_list
+        else:
+            # 没有AI客户端，保持原有分类和标签
+            if not user_category:
+                user_category = current_category
+            if not user_tags_list:
+                user_tags_list = parse_tags_to_list(current_tags)
     tags_str = ",".join(user_tags_list)
 
     # 写入文件（并删除旧文件如路径变化）
@@ -544,92 +609,129 @@ async def optimize_text(req: OptimizeRequest, request: Request):
     期望模型输出 JSON：{"title": "...", "content": "..."}
     同时后端会基于优化后的正文自动提取 {category, tags} 并一并返回
     """
-    _ = get_ai_client(request)
+    try:
+        _ = get_ai_client(request)
+    except HTTPException as e:
+        # 直接传递更友好的错误信息
+        if "未配置 AI API" in str(e.detail):
+            raise HTTPException(status_code=400, detail="请先配置AI API：在页面顶部填写API地址和密钥，然后点击登录")
+        elif "AI服务连接失败" in str(e.detail) or "AI服务连接超时" in str(e.detail):
+            raise e  # 直接传递AI服务相关的错误
+        else:
+            raise e
 
     # 优先使用请求中的自定义提示词，否则从文件加载默认提示词
     base_prompt = (req.prompt or read_default_prompt()).strip()
-    # 模式判断：除非用户明确要求改写，否则只做分析（知识图谱 + 知识点），不改写原文
-    normalized = base_prompt.lower()
-    should_rewrite = any(k in normalized for k in ["rewrite", "重写", "改写", "优化表达", "润色", "重构表述"])  # 触发改写关键词
+    
+    # 调试信息
+    print(f"收到的提示词: {req.prompt}")
+    print(f"最终使用的提示词: {base_prompt}")
+    
+    # 判断是否使用自定义提示词（非默认提示词）
+    default_prompt = read_default_prompt().strip()
+    is_custom_prompt = base_prompt != default_prompt and base_prompt != ""
+    
+    # 根据是否使用自定义提示词决定分析长度
+    content_length = 20000 if is_custom_prompt else 4000
+    
+    # 收集现有分类与标签（用于优先匹配）
+    cursor.execute(
+        """
+        SELECT category, COUNT(1)
+        FROM notes
+        WHERE category IS NOT NULL AND category != ''
+        GROUP BY category
+        ORDER BY COUNT(1) DESC
+        """
+    )
+    existing_categories = [r[0] for r in cursor.fetchall()][:200]
+    cursor.execute("SELECT tags FROM notes WHERE tags IS NOT NULL AND tags != ''")
+    tag_counter = {}
+    for (tags_str,) in cursor.fetchall():
+        for t in [x.strip() for x in tags_str.split(',') if x.strip()]:
+            tag_counter[t] = tag_counter.get(t, 0) + 1
+    existing_tags = [k for k, _ in sorted(tag_counter.items(), key=lambda kv: kv[1], reverse=True)][:300]
+    
+    # 模式判断：如果用户输入了自定义提示词，就改写原文；否则只做分析（知识图谱 + 知识点）
     try:
-        if should_rewrite:
-            # 原有改写流程
+        if is_custom_prompt:
+            # 自定义提示词模式：直接使用用户提示词，不混合系统提示词
             response = client.chat.completions.create(
                 model=CURRENT_MODEL,
                 messages=[
-                    {"role": "system", "content": (
-                        "你是一个专业的中文写作与知识整理助手。请在忠实原意的前提下优化表达、结构与条理；"
-                        "同时为文章生成一个10-20字的简洁中文标题。"
-                    )},
                     {"role": "user", "content": (
-                        "请严格输出JSON（不要解释），格式如下：\n"
-                        '{"title":"示例标题","content":"示例优化正文"}\n\n'
-                        f"提示：{base_prompt}\n\n原文：\n{req.content[:8000]}"
+                        f"{base_prompt}\n\n"
+                        f"原文：\n{req.content[:content_length]}"
                     )}
                 ],
-                temperature=0.3,
-                max_tokens=2048
+                temperature=0.7,
+                max_tokens=20000
             )
             raw = response.choices[0].message.content.strip()
             title = ""
             optimized = raw
+            category = "其他"
+            tags = ["未分类"]
             try:
                 obj = json.loads(raw)
                 title = (obj.get("title") or "").strip()
                 optimized = (obj.get("content") or "").strip()
+                category = (obj.get("category") or "其他").strip()
+                tags = obj.get("tags") or ["未分类"]
+                if isinstance(tags, str):
+                    tags = [tag.strip() for tag in tags.split(',') if tag.strip()]
             except Exception:
                 lines = [x.strip() for x in raw.splitlines() if x.strip()]
                 if lines:
                     title = lines[0][:20]
-            base_for_extract = optimized if (optimized and optimized.strip()) else req.content
-            try:
-                cat, tag_list = extract_category_and_tags(base_for_extract)
-            except Exception:
-                cat, tag_list = ("其他", ["未分类"])
-            return {"title": title, "optimized": optimized, "category": cat, "tags": tag_list, "mode": "rewrite"}
+            return {"title": title, "optimized": optimized, "category": category, "tags": tags, "mode": "rewrite"}
         else:
-            # 默认仅分析：输出知识点与知识图谱，不改写正文
+            # 默认分析模式：知识点 + 知识图谱 + 分类标签
             response = client.chat.completions.create(
                 model=CURRENT_MODEL,
                 messages=[
                     {"role": "system", "content": (
                         "你是一个专业的中文知识整理助手。默认不要改写用户原文；"
-                        "请基于原文抽取‘知识点总结’与‘知识图谱’，并生成10-20字中文标题。"
+                        "请基于原文抽取'知识点总结'与'知识图谱'，并生成10-20字中文标题，同时提取合适的分类和标签。"
+                        "优先从现有分类和标签中选择，如果没有合适的再创建新的。"
+                        f"现有分类列表：{', '.join(existing_categories) if existing_categories else '（暂无）'}"
+                        f"现有标签列表：{', '.join(existing_tags) if existing_tags else '（暂无）'}"
                     )},
                     {"role": "user", "content": (
                         "请严格输出JSON（不要解释），格式如下：\n"
-                        '{"title":"示例标题","key_points":["要点1","要点2"],"graph":{"nodes":[{"id":"概念A"},{"id":"概念B"}],"edges":[{"source":"概念A","target":"概念B","relation":"包含/因果/引用"}]}}\n\n'
-                        f"提示：{base_prompt}\n\n原文：\n{req.content[:8000]}"
+                        '{"title":"示例标题","key_points":["要点1","要点2"],"graph":{"nodes":[{"id":"概念A"},{"id":"概念B"}],"edges":[{"source":"概念A","target":"概念B","relation":"包含/因果/引用"}]},"category":"分类名称","tags":["标签1","标签2"]}\n\n'
+                        f"提示：{base_prompt}\n\n原文：\n{req.content[:content_length]}"
                     )}
                 ],
-                temperature=0.2,
-                max_tokens=2048
+                temperature=0.6,
+                max_tokens=4048
             )
             raw = response.choices[0].message.content.strip()
             title = ""
             key_points = []
             graph = {"nodes": [], "edges": []}
+            category = "其他"
+            tags = ["未分类"]
             try:
                 obj = json.loads(raw)
                 title = (obj.get("title") or "").strip()
                 key_points = obj.get("key_points") or []
                 graph = obj.get("graph") or {"nodes": [], "edges": []}
+                category = (obj.get("category") or "其他").strip()
+                tags = obj.get("tags") or ["未分类"]
+                if isinstance(tags, str):
+                    tags = [tag.strip() for tag in tags.split(',') if tag.strip()]
             except Exception:
                 lines = [x.strip() for x in raw.splitlines() if x.strip()]
                 if lines:
                     title = lines[0][:20]
             # 不改写正文：optimized 回传原文
             optimized = (req.content or "").strip()
-            try:
-                base_for_extract = req.content
-                cat, tag_list = extract_category_and_tags(base_for_extract)
-            except Exception:
-                cat, tag_list = ("其他", ["未分类"])
             return {
                 "title": title,
                 "optimized": optimized,
-                "category": cat,
-                "tags": tag_list,
+                "category": category,
+                "tags": tags,
                 "key_points": key_points,
                 "graph": graph,
                 "mode": "analyze"
