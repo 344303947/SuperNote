@@ -178,6 +178,7 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 - 统一通过 `/api` 前缀访问后端接口
 - 修改前端无需构建，刷新页面生效
 - 如需扩展字段，先更新表结构与 `Note/UpdateNoteRequest` 模型，再调整前端渲染
+- `__pycache__/` 目录已在 `.gitignore` 中配置忽略，不会提交到版本控制
 
 
 ---
