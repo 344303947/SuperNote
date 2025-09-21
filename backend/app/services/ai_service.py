@@ -34,7 +34,7 @@ class AIService:
         """检查AI是否已配置"""
         return self.client is not None
     
-    def extract_category_and_tags(self, content: str, max_length: int = 4000) -> Tuple[str, List[str]]:
+    def extract_category_and_tags(self, content: str, max_length: int = 1000) -> Tuple[str, List[str]]:
         """提取分类和标签"""
         if not self.is_configured():
             raise AIConfigurationError("AI未配置")
@@ -70,7 +70,7 @@ class AIService:
         
         # 判断是否使用自定义提示词
         is_custom_prompt = prompt and prompt.strip() != ""
-        content_length = 20000 if is_custom_prompt else 4000
+        content_length = 20000 if is_custom_prompt else 1000
         
         try:
             if is_custom_prompt:
