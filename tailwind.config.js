@@ -2,7 +2,7 @@
 module.exports = {
   content: [
     "./index.html",
-    "./js/**/*.js",
+    "./frontend/js/**/*.js",
     "./notes/**/*.md"
   ],
   theme: {

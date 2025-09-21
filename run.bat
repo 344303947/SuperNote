@@ -28,9 +28,9 @@ call .venv\Scripts\python -m pip install -r requirements.txt || (
   exit /b 1
 )
 
-REM Start app
-echo [INFO] 启动应用 ...
-call .venv\Scripts\python main.py
+REM Start app with new architecture
+echo [INFO] 启动应用 (新架构) ...
+call .venv\Scripts\python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
 
 endlocal
 

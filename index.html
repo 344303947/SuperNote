@@ -5,19 +5,41 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>智能笔记管理器</title>
   
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  
   <!-- 外部依赖 -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
   
   <!-- 样式文件 -->
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="frontend/styles.css">
 </head>
 <body class="h-full font-sans">
   <div class="container mx-auto px-4 py-8 max-w-6xl">
     <!-- Header -->
     <header class="text-center mb-10">
-      <h1 class="text-4xl font-bold text-gray-800 mb-2">🧠 智能笔记管理</h1>
-      <p class="text-gray-600">AI 自动分类，自动优化，一键存储，全文搜索，支持本地部署AI模型</p>
+      <h1 class="text-4xl font-bold text-gray-800 mb-2">🧠 Super Notes AI个人笔记管理</h1>
+      <p class="text-gray-600">AI个人笔记管理，自动分类标签，整理知识，保障隐私安全，本地化部署</p>
+      
+      <!-- 配置信息显示区域 -->
+      <div id="configInfo" class="mt-6 text-center hidden">
+        <div class="flex items-center justify-center space-x-8">
+          <div class="flex items-center space-x-3">
+            <span class="text-sm text-gray-600">API地址:</span>
+            <span id="currentApiUrl" class="text-sm text-gray-800 font-mono"></span>
+          </div>
+          <div class="flex items-center space-x-3">
+            <span class="text-sm text-gray-600">&nbsp;模型:</span>
+            <span id="currentModel" class="text-sm text-gray-800 font-mono"></span>
+          </div>
+          <div class="flex items-center space-x-3">
+            <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+            <span class="text-sm text-gray-600">&nbsp;已连接</span>
+          </div>
+        </div>
+      </div>
     </header>
 
     <!-- API 配置 -->
@@ -35,14 +57,14 @@
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">默认模型</label>
           <select id="modelSelect" class="w-full search-input">
-            <option value="qwen3:30b-40k">qwen3:30b-40k</option>
-            <option value="Qwen3-Next-80B-A3B-Instruct">Qwen3-Next-80B-A3B-Instruct</option>
+           
+            <option value="Qwen3-Next-80B-A3B-Instruct" selected>Qwen3-Next-80B-A3B-Instruct</option>
             <option value="custom">自定义模型</option>
           </select>
           <input type="text" id="customModelInput" placeholder="输入自定义模型名称" class="w-full search-input mt-2 hidden" />
         </div>
         <div class="md:col-span-2 text-right">
-          <button type="submit" class="btn btn-primary">保存并登录</button>
+          <button type="submit" class="btn btn-primary">登录</button>
         </div>
       </form>
     </div>
@@ -86,11 +108,6 @@
         </aside>
       </div>
     </div>
-
-    <!-- 无 API 配置提示 -->
-    <div id="noConfig" class="text-center text-gray-500 py-10">
-      <p>请先配置 OpenAI API 地址和 Key</p>
-    </div>
   </div>
 
   <!-- 新建笔记模态框 -->
@@ -124,23 +141,34 @@
           </div>
         </div>
         
-        <div class="mt-4">
-          <label class="block text-sm text-gray-700 mb-2">AI 优化提示词（可选）</label>
-          <input id="newOptPrompt" type="text" placeholder="帮助用户完善笔记文档，并整理归类总结" class="w-full mb-3 p-2 border rounded" />
+        <div class="mt-4 border-t pt-4">
+          <label class="block text-sm text-gray-700 mb-2">AI优化提示词（选填）</label>
+          <input id="newOptPrompt" type="text" placeholder="请输入您的优化要求，例如：请整理总结笔记内容，使用Markdown格式输出" class="w-full mb-3 p-2 border rounded" />
+          <div class="mb-3 text-xs text-gray-600">
+            <div class="flex items-center gap-4">
+              <span class="flex items-center gap-1">
+                <span class="w-3 h-3 rounded" style="background-color: #059669;"></span>
+                <span>分析标题分类：自动提取标题、分类、标签</span>
+              </span>
+              <span class="flex items-center gap-1">
+                <span class="w-3 h-3 rounded" style="background-color: #059669;"></span>
+                <span>AI优化重写：根据提示词优化内容</span>
+              </span>
+            </div>
+          </div>
           <div class="flex gap-3">
-            <button id="newOptimizeCombinedBtn" class="btn" style="background-color: #7c3aed; color: white;">AI 优化</button>
+            <button id="newAnalyzeBtn" class="btn btn-ai-analyze" style="background-color: #059669; color: white;">分析标题分类</button>
+            <button id="newOptimizeCombinedBtn" class="btn btn-ai-optimize" style="background-color: #059669; color: white;">AI优化重写</button>
+            <button id="cancelBtn2" class="btn btn-outline">取消</button>
+            <button id="saveNoteBtn" class="btn btn-primary" style="background-color: #059669; color: white;">保存</button>
           </div>
           <div id="newOptStatus" class="text-sm text-gray-500 mt-2 hidden">正在调用 AI …</div>
         </div>
         
-        <div class="flex items-center justify-between mt-6">
+        <div class="flex items-center justify-center mt-6">
           <div id="saveStatus" class="flex items-center gap-2 text-gray-500 text-sm hidden">
             <div class="spinner"></div>
             <span>正在保存，AI 正在分析分类与标签，请稍候…</span>
-          </div>
-          <div class="flex justify-end gap-3">
-            <button id="cancelBtn2" class="btn btn-outline">取消</button>
-            <button id="saveNoteBtn" class="btn btn-primary">保存</button>
           </div>
         </div>
       </div>
@@ -187,14 +215,27 @@
         <div id="viewPreview" class="whitespace-normal break-words bg-gray-50 p-4 rounded border text-sm overflow-x-auto h-80"></div>
         
         <div class="mt-4 border-t pt-4">
-          <label class="block text-sm text-gray-700 mb-2">AI 优化提示词（可选）</label>
-          <input id="optPrompt" type="text" placeholder="帮助用户完善笔记文档，并整理归类总结" class="w-full mb-3 p-2 border rounded" />
+          <label class="block text-sm text-gray-700 mb-2">AI优化重写提示词（选填）</label>
+          <input id="optPrompt" type="text" placeholder="请输入您的优化要求，例如：请整理总结笔记内容，使用Markdown格式输出" class="w-full mb-3 p-2 border rounded" />
+          <div class="mb-3 text-xs text-gray-600">
+            <div class="flex items-center gap-4">
+              <span class="flex items-center gap-1">
+                <span class="w-3 h-3 rounded" style="background-color: #059669;"></span>
+                <span>分析标题分类：自动提取标题、分类、标签</span>
+              </span>
+              <span class="flex items-center gap-1">
+                <span class="w-3 h-3 rounded" style="background-color: #059669;"></span>
+                <span>AI优化重写：根据提示词优化内容</span>
+              </span>
+            </div>
+          </div>
           <div class="flex gap-3">
-            <button id="optimizeBtn" class="btn" style="background-color: #7c3aed; color: white;">AI 优化</button>
-            <button id="saveOptimizedBtn" class="btn btn-success">保存</button>
+            <button id="analyzeBtn" class="btn btn-ai-analyze" style="background-color: #059669; color: white;">分析标题分类</button>
+            <button id="optimizeBtn" class="btn btn-ai-optimize" style="background-color: #059669; color: white;">AI优化重写</button>
+            <button id="saveOptimizedBtn" class="btn btn-success" style="background-color: #059669; color: white;">保存</button>
             <button id="deleteNoteBtn" class="btn btn-danger">删除</button>
           </div>
-          <div id="optStatus" class="text-sm text-gray-500 mt-2 hidden">正在调用 AI 优化…</div>
+          <div id="optStatus" class="text-sm text-gray-500 mt-2 hidden">正在调用 AI 优化重写…</div>
         </div>
       </div>
     </div>
@@ -205,7 +246,7 @@
     <div class="modal-content">
       <div class="modal-header">
         <div class="flex items-center justify-between">
-          <h2 id="fullscreenTitle" class="text-2xl font-bold text-gray-800">笔记全屏预览</h2>
+          <h2 id="fullscreenTitle" class="text-2xl font-bold text-gray-800">全屏预览</h2>
           <div class="flex gap-2">
             <button id="exitFullscreenBtn" class="btn btn-outline" title="退出全屏">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -235,28 +276,76 @@
       </div>
       <div class="modal-body">
         <div class="editor-container">
-          <textarea id="fullscreenEditor" class="editor-textarea w-full p-4 border-0 font-mono text-sm resize-none focus:outline-none" style="font-family:'Courier New', monospace;"></textarea>
+          <textarea id="fullscreenEditor" class="editor-textarea w-full p-4 border-0 font-mono text-sm resize-none focus:outline-none hidden" style="font-family:'Courier New', monospace;"></textarea>
           <div id="fullscreenPreview" class="preview-container p-4 bg-gray-50 border-0 text-sm"></div>
         </div>
       </div>
       <div class="modal-footer">
         <div class="flex items-center justify-between">
           <div>
-            <label class="block text-sm text-gray-700 mb-2">AI 优化提示词（可选）</label>
-            <input id="fullscreenOptPrompt" type="text" placeholder="帮助用户完善笔记文档，并整理归类总结" class="w-full mb-3 p-2 border rounded" />
+            <label class="block text-sm text-gray-700 mb-2">AI优化重写提示词（选填）</label>
+            <input id="fullscreenOptPrompt" type="text" placeholder="请输入您的优化要求，例如：请整理总结笔记内容，使用Markdown格式输出" class="w-full mb-3 p-2 border rounded" />
+          </div>
+          <div class="mb-3 text-xs text-gray-600">
+            <div class="flex items-center gap-4">
+              <span class="flex items-center gap-1">
+                <span class="w-3 h-3 rounded" style="background-color: #059669;"></span>
+                <span>分析标题分类：自动提取标题、分类、标签</span>
+              </span>
+              <span class="flex items-center gap-1">
+                <span class="w-3 h-3 rounded" style="background-color: #059669;"></span>
+                <span>AI优化重写：根据提示词优化内容</span>
+              </span>
+            </div>
           </div>
           <div class="flex gap-3">
-            <button id="fullscreenOptimizeBtn" class="btn" style="background-color: #7c3aed; color: white;">AI 优化</button>
-            <button id="fullscreenSaveBtn" class="btn btn-success">保存</button>
+            <button id="fullscreenAnalyzeBtn" class="btn btn-ai-analyze" style="background-color: #059669; color: white;">分析标题分类</button>
+            <button id="fullscreenOptimizeBtn" class="btn btn-ai-optimize" style="background-color: #059669; color: white;">AI优化重写</button>
+            <button id="fullscreenSaveBtn" class="btn btn-success" style="background-color: #059669; color: white;">保存</button>
             <button id="fullscreenDeleteBtn" class="btn btn-danger">删除</button>
           </div>
         </div>
-        <div id="fullscreenOptStatus" class="text-sm text-gray-500 mt-2 hidden">正在调用 AI 优化…</div>
+        <div id="fullscreenOptStatus" class="text-sm text-gray-500 mt-2 hidden">正在调用 AI 优化重写…</div>
       </div>
     </div>
   </div>
 
   <!-- JavaScript 模块 -->
-  <script type="module" src="js/app.js"></script>
+  <script type="module">
+    // 导入新的模块化架构
+    import { App } from './js/core/app.js';
+    
+    // 初始化应用
+    document.addEventListener('DOMContentLoaded', () => {
+      window.app = new App();
+      window.app.init();
+      
+      // 添加全局调试函数
+      window.resetAIOptimization = () => {
+        window.app.resetAIOptimizationState();
+        console.log('AI优化重写状态已重置，可以重新尝试优化');
+      };
+      
+      window.getAIOptimizationState = async () => {
+        const { aiService } = await import('./js/services/ai.js');
+        const state = aiService.getOptimizationState();
+        console.log('AI优化重写状态:', state);
+        return state;
+      };
+      
+      window.clearRequestCache = async () => {
+        const { clearRequestCache } = await import('./js/services/api.js');
+        clearRequestCache();
+        console.log('请求缓存已清理');
+      };
+      
+      window.getCacheStatus = async () => {
+        const { getCacheStatus } = await import('./js/services/api.js');
+        const status = getCacheStatus();
+        console.log('请求缓存状态:', status);
+        return status;
+      };
+    });
+  </script>
 </body>
 </html>
