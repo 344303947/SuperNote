@@ -1,4 +1,7 @@
 """
+智能笔记管理器 (note-ai-manager)
+Copyright (C) 2025 sean.su
+
 FastAPI应用主入口
 """
 from pathlib import Path

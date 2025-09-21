@@ -1,4 +1,7 @@
 /**
+ * 智能笔记管理器 (note-ai-manager)
+ * Copyright (C) 2025 sean.su
+ * 
  * 主应用类 - 新架构版本
  */
 import { authAPI, notesAPI, statsAPI } from '../services/api.js';
