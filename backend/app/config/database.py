@@ -22,11 +22,33 @@ class DatabaseManager:
         
         # 连接数据库
         db_path = settings.data_dir / "notes.db"
-        self.connection = sqlite3.connect(str(db_path), check_same_thread=False)
-        self.cursor = self.connection.cursor()
         
-        # 创建表
-        self._create_tables()
+        try:
+            # 检查数据库文件权限
+            import os
+            if db_path.exists():
+                if not os.access(str(db_path), os.W_OK):
+                    raise PermissionError(f"数据库文件 {db_path} 没有写权限")
+            
+            # 检查目录权限
+            if not os.access(str(settings.data_dir), os.W_OK):
+                raise PermissionError(f"数据目录 {settings.data_dir} 没有写权限")
+            
+            self.connection = sqlite3.connect(str(db_path), check_same_thread=False)
+            self.cursor = self.connection.cursor()
+            
+            # 创建表
+            self._create_tables()
+            
+        except sqlite3.OperationalError as e:
+            if "readonly database" in str(e).lower():
+                raise PermissionError(f"数据库只读错误: {e}\n请检查文件权限或运行权限修复脚本")
+            else:
+                raise e
+        except PermissionError as e:
+            raise e
+        except Exception as e:
+            raise Exception(f"数据库初始化失败: {e}")
     
     def _create_tables(self):
         """创建数据库表"""
