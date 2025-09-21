@@ -16,9 +16,6 @@ export class Autocomplete {
       ...options
     };
     
-    console.log('🔧 Autocomplete构造函数，输入元素:', this.input);
-    console.log('🔧 Autocomplete构造函数，数据源:', this.options.dataSource);
-    console.log('🔧 Autocomplete构造函数，选项:', this.options);
     
     this.suggestions = [];
     this.selectedIndex = -1;
@@ -64,7 +61,6 @@ export class Autocomplete {
     // 输入框获得焦点时，如果是标签自动完成（minLength为0），显示所有标签
     this.input.addEventListener('focus', () => {
       if (this.options.minLength === 0) {
-        console.log('🎯 标签输入框获得焦点，显示所有标签');
         this.handleInput('');
       }
     });
@@ -86,11 +82,8 @@ export class Autocomplete {
   handleInput(value) {
     const query = value.trim();
     
-    console.log('🔍 自动完成输入处理，查询词:', query);
-    console.log('🔍 数据源:', this.options.dataSource);
     
     if (query.length < this.options.minLength) {
-      console.log('❌ 查询词长度不足，最小长度:', this.options.minLength);
       this.hide();
       return;
     }
@@ -100,26 +93,21 @@ export class Autocomplete {
     if (query.length === 0 && this.options.minLength === 0) {
       // 如果没有输入且最小长度为0，显示所有数据（用于标签自动完成）
       filteredData = this.options.dataSource;
-      console.log('🔍 显示所有标签（无输入过滤）');
     } else {
       // 正常过滤逻辑
       filteredData = this.options.dataSource.filter(item => {
         const text = typeof item === 'string' ? item : item.text || item.name || '';
         const matches = text.toLowerCase().includes(query.toLowerCase());
-        console.log(`🔍 检查项目: "${text}" 匹配 "${query}": ${matches}`);
         return matches;
       });
     }
     
     this.suggestions = filteredData.slice(0, this.options.maxItems);
     
-    console.log('🔍 过滤后的建议列表:', this.suggestions);
     
     if (this.suggestions.length > 0) {
-      console.log('✅ 显示建议列表');
       this.show();
     } else {
-      console.log('❌ 没有匹配的建议，隐藏列表');
       this.hide();
     }
     
@@ -173,23 +161,18 @@ export class Autocomplete {
   
   show() {
     if (this.suggestions.length === 0) {
-      console.log('❌ 没有建议可显示');
       return;
     }
     
-    console.log('✅ 显示自动完成列表，建议数量:', this.suggestions.length);
-    console.log('✅ 容器元素:', this.container);
     
     this.renderSuggestions();
     showElement(this.container);
     this.isVisible = true;
     this.selectedIndex = -1;
     
-    console.log('✅ 自动完成列表已显示');
   }
   
   hide() {
-    console.log('❌ 隐藏自动完成列表');
     hideElement(this.container);
     this.isVisible = false;
     this.selectedIndex = -1;

@@ -166,7 +166,7 @@ frontend/
 ### 新架构启动
 ```bash
 # 使用新的启动脚本
-python start_new.py
+python start.py
 
 # 或直接启动后端
 cd backend

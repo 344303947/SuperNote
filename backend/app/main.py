@@ -28,6 +28,10 @@ frontend_js_dir = BASE_DIR / "frontend" / "js"
 if frontend_js_dir.exists():
     app.mount("/js", StaticFiles(directory=str(frontend_js_dir)), name="js")
 
+# 挂载根目录静态文件（favicon等）
+root_static_dir = BASE_DIR
+app.mount("/static", StaticFiles(directory=str(root_static_dir)), name="static")
+
 # 注册路由
 app.include_router(auth_router, prefix="/api", tags=["认证"])
 app.include_router(notes_router, prefix="/api", tags=["笔记"])
@@ -55,6 +59,28 @@ async def get_styles():
     """获取样式文件"""
     styles_file = BASE_DIR / "frontend" / "styles.css"
     return FileResponse(str(styles_file))
+
+
+@app.get("/favicon.ico")
+async def get_favicon_ico():
+    """获取favicon.ico文件"""
+    favicon_file = BASE_DIR / "favicon.ico"
+    if favicon_file.exists():
+        return FileResponse(str(favicon_file))
+    else:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Favicon not found")
+
+
+@app.get("/favicon.svg")
+async def get_favicon_svg():
+    """获取favicon.svg文件"""
+    favicon_file = BASE_DIR / "favicon.svg"
+    if favicon_file.exists():
+        return FileResponse(str(favicon_file))
+    else:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Favicon not found")
 
 
 if __name__ == "__main__":

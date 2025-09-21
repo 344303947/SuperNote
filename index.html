@@ -9,9 +9,9 @@
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
   
-  <!-- 外部依赖 -->
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+  <!-- 外部依赖 - 本地化版本 -->
+  <script src="frontend/assets/libs/marked.min.js"></script>
+  <script src="frontend/assets/libs/purify.min.js"></script>
   
   <!-- 样式文件 -->
   <link rel="stylesheet" href="frontend/styles.css">
@@ -20,8 +20,8 @@
   <div class="container mx-auto px-4 py-8 max-w-6xl">
     <!-- Header -->
     <header class="text-center mb-10">
-      <h1 class="text-4xl font-bold text-gray-800 mb-2">🧠 Super Notes AI个人笔记管理</h1>
-      <p class="text-gray-600">AI个人笔记管理，自动分类标签，整理知识，保障隐私安全，本地化部署</p>
+      <h1 class="text-4xl font-bold text-gray-800 mb-2">🧠 Super Note 个人笔记管理</h1>
+      <p class="text-gray-600">个人笔记管理，自动分类标签，整理知识，保障隐私安全，本地化部署</p>
       
       <!-- 配置信息显示区域 -->
       <div id="configInfo" class="mt-6 text-center hidden">
@@ -104,6 +104,21 @@
           <div class="border border-gray-200 rounded-lg p-4 mt-4">
             <h3 class="text-base font-semibold text-gray-800 mb-2">标签词云</h3>
             <div id="tagCloud" class="flex flex-wrap gap-2"></div>
+          </div>
+          
+          <!-- 汇总信息区域 -->
+          <div class="border border-gray-200 rounded-lg p-4 mt-4 bg-gradient-to-r from-blue-50 to-indigo-50">
+            <h3 class="text-base font-semibold text-gray-800 mb-3">📊 笔记统计</h3>
+            <div class="grid grid-cols-2 gap-4 text-sm">
+              <div class="text-center">
+                <div class="text-2xl font-bold text-blue-600" id="totalNotesCount">0</div>
+                <div class="text-gray-600">总笔记数</div>
+              </div>
+              <div class="text-center">
+                <div class="text-lg font-semibold text-indigo-600" id="currentDate">-</div>
+                <div class="text-gray-600">当前日期</div>
+              </div>
+            </div>
           </div>
         </aside>
       </div>

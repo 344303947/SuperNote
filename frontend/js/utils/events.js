@@ -13,7 +13,6 @@ export function preventDoubleClick(fn, delay = 1000) {
   
   return async function(...args) {
     if (isExecuting) {
-      console.log('操作正在进行中，请稍候...');
       return;
     }
     
@@ -41,7 +40,6 @@ export function preventDoubleClickAI(fn, delay = 3000) {
   
   return async function(...args) {
     if (isExecuting) {
-      console.log('AI功能正在进行中，请稍候...');
       // 显示友好的提示信息
       const button = args[0]?.target || document.activeElement;
       if (button && button.tagName === 'BUTTON') {
@@ -231,7 +229,6 @@ export function preventDoubleClickSave(fn, delay = 2000) {
   
   return async function(...args) {
     if (isExecuting) {
-      console.log('保存正在进行中，请稍候...');
       return;
     }
     

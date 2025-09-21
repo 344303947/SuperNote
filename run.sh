@@ -18,7 +18,7 @@ fi
 echo "[INFO] 安装依赖 ..."
 "$ROOT/.venv/bin/python" -m pip install -r requirements.txt
 
-echo "[INFO] 启动应用 ..."
-exec "$ROOT/.venv/bin/python" main.py
+echo "[INFO] 启动应用 (新架构) ..."
+exec "$ROOT/.venv/bin/python" -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
 
 

@@ -19,16 +19,13 @@ export class AIService {
    * @returns {Promise<Object>} 优化结果
    */
   async optimizeText(content, prompt = null) {
-    console.log('AI优化重写请求开始，当前状态:', this.isOptimizing);
     
     // 如果已经有请求在进行中，返回当前的请求结果
     if (this.currentRequest) {
-      console.log('AI优化重写正在进行中，返回当前请求结果');
       return await this.currentRequest;
     }
 
     this.isOptimizing = true;
-    console.log('设置优化状态为true');
 
     // 创建新的请求Promise
     this.currentRequest = this._performOptimization(content, prompt);
@@ -39,14 +36,12 @@ export class AIService {
     } catch (error) {
       // 如果是请求被取消的错误，静默处理，不抛出
       if (error.message && error.message.includes('请求已取消')) {
-        console.log('请求被取消，静默处理');
         throw new Error('AI优化重写正在进行中，请稍候...');
       }
       throw error;
     } finally {
       this.isOptimizing = false;
       this.currentRequest = null;
-      console.log('重置优化状态为false');
     }
   }
 
@@ -55,13 +50,11 @@ export class AIService {
    */
   async _performOptimization(content, prompt) {
     try {
-      console.log('开始调用AI API...');
       const result = await aiAPI.optimize({
         content,
         prompt
       });
 
-      console.log('AI API调用成功');
       return {
         title: result.title || '',
         optimized: result.optimized || content,
@@ -76,7 +69,6 @@ export class AIService {
       
       // 特殊处理AbortError
       if (error.name === 'AbortError') {
-        console.log('请求被取消，这通常是正常的（重复请求被去重）');
         throw new Error('请求已取消，请勿重复点击');
       }
       
@@ -104,7 +96,6 @@ export class AIService {
    * 强制重置优化状态（用于调试和错误恢复）
    */
   resetOptimizationState() {
-    console.log('强制重置AI优化重写状态');
     this.isOptimizing = false;
     this.currentRequest = null;
   }

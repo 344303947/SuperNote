@@ -8,13 +8,13 @@ cd /d "%ROOT%"
 REM Use Python from PATH
 where python >nul 2>nul
 if errorlevel 1 (
-  echo [ERROR] æœªæ‰¾åˆ° Pythonï¼Œè¯·å…ˆå®‰è£… Python å¹¶åŠ å…¥ PATHã€‚
+  echo [ERROR] Î´ÕÒµ½ Python£¬ÇëÏÈ°²×° Python ²¢¼ÓÈë PATH¡£
   exit /b 1
 )
 
 REM Create venv if not exists
 if not exist .venv (
-  echo [INFO] åˆ›å»ºè™šæ‹Ÿç¯å¢ƒ .venv ...
+  echo [INFO] ´´½¨ĞéÄâ»·¾³ .venv ...
   python -m venv .venv
 )
 
@@ -22,14 +22,14 @@ REM Upgrade pip
 call .venv\Scripts\python -m pip install --upgrade pip >nul
 
 REM Install dependencies
-echo [INFO] å®‰è£…ä¾èµ– ...
+echo [INFO] °²×°ÒÀÀµ ...
 call .venv\Scripts\python -m pip install -r requirements.txt || (
-  echo [ERROR] ä¾èµ–å®‰è£…å¤±è´¥ã€‚
+  echo [ERROR] ÒÀÀµ°²×°Ê§°Ü¡£
   exit /b 1
 )
 
 REM Start app with new architecture
-echo [INFO] å¯åŠ¨åº”ç”¨ (æ–°æ¶æ„) ...
+echo [INFO] Æô¶¯Ó¦ÓÃ (ĞÂ¼Ü¹¹) ...
 call .venv\Scripts\python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
 
 endlocal

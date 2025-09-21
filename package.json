@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "description": "智能笔记管理器 - AI 自动分类，自动优化，一键存储，全文搜索",
   "scripts": {
-    "build-css": "tailwindcss -i ./src/input.css -o ./frontend/styles.css --watch",
-    "build-css-prod": "tailwindcss -i ./src/input.css -o ./frontend/styles.css --minify"
+    "build-css": "tailwindcss -i ./frontend/styles/input.css -o ./frontend/styles.css --watch",
+    "build-css-prod": "tailwindcss -i ./frontend/styles/input.css -o ./frontend/styles.css --minify"
   },
   "devDependencies": {
     "tailwindcss": "^3.4.0"
@@ -16,5 +16,9 @@
     "tailwindcss"
   ],
   "author": "note-ai-manager",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "dompurify": "^3.2.7",
+    "marked": "^16.3.0"
+  }
 }

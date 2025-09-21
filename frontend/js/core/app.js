@@ -79,7 +79,6 @@ export class App {
    */
   async init() {
     try {
-      console.log('🚀 初始化智能笔记管理系统 (新架构)');
       
       // 初始化模态框
       this.initModals();
@@ -90,7 +89,6 @@ export class App {
       // 加载初始数据
       await this.loadInitialData();
       
-      console.log('✅ 应用初始化完成');
     } catch (error) {
       console.error('❌ 应用初始化失败:', error);
       this.showError('应用初始化失败，请刷新页面重试');
@@ -372,8 +370,6 @@ export class App {
       const categories = await statsAPI.getCategories();
       const tags = await statsAPI.getTags();
       
-      console.log('📊 从API获取到的分类数据:', categories);
-      console.log('🏷️ 从API获取到的标签数据:', tags);
       
       // 缓存数据，供自动完成使用
       this.cachedCategories = categories;
@@ -385,7 +381,6 @@ export class App {
       this.attachFuzzySuggest(getElementById('noteTags'), () => this.cachedTags, true);
       this.attachFuzzySuggest(getElementById('editTags'), () => this.cachedTags, true);
       
-      console.log('✅ 自动完成功能初始化完成（使用之前版本实现）');
     } catch (error) {
       console.error('❌ 自动完成功能初始化失败:', error);
       // 如果API调用失败，尝试从统计数据获取（备用方案）
@@ -393,8 +388,6 @@ export class App {
         const categories = this.getCategoriesFromStats();
         const tags = this.getTagsFromStats();
         
-        console.log('📊 使用备用方案获取到的分类数据:', categories);
-        console.log('🏷️ 使用备用方案获取到的标签数据:', tags);
         
         // 缓存数据，供自动完成使用
         this.cachedCategories = categories;
@@ -406,7 +399,6 @@ export class App {
         this.attachFuzzySuggest(getElementById('noteTags'), () => this.cachedTags, true);
         this.attachFuzzySuggest(getElementById('editTags'), () => this.cachedTags, true);
         
-        console.log('✅ 自动完成功能初始化完成（备用方案）');
       } catch (fallbackError) {
         console.error('❌ 备用方案也失败了:', fallbackError);
       }
@@ -770,13 +762,10 @@ export class App {
       
       // 特殊处理不同类型的错误
       if (error.message && error.message.includes('AI优化重写正在进行中')) {
-        console.log('AI优化重写正在进行中，显示友好提示');
         this.showInfo('AI优化重写正在进行中，请稍候...');
       } else if (error.message && error.message.includes('请求已取消')) {
-        console.log('请求被取消，不显示错误信息');
         // 不显示错误信息，因为这是正常的去重行为
       } else if (error.name === 'AbortError') {
-        console.log('请求被中止，不显示错误信息');
         // 不显示错误信息，因为这是正常的去重行为
       } else {
         this.showError(error.message || 'AI优化重写失败');
@@ -789,7 +778,6 @@ export class App {
    */
   resetAIOptimizationState() {
     aiService.resetOptimizationState();
-    console.log('AI优化重写状态已重置');
   }
 
   /**
@@ -968,6 +956,9 @@ export class App {
       
       this.renderNotes(this.currentNotes);
       this.renderPagination();
+      
+      // 更新汇总信息
+      this.renderSummaryInfo({});
     } catch (error) {
       console.error('加载笔记失败:', error);
       this.showError(error.message || '加载笔记失败');
@@ -1069,6 +1060,7 @@ export class App {
   renderStats(stats) {
     this.renderCategories(stats.categories || []);
     this.renderTags(stats.tags || []);
+    this.renderSummaryInfo(stats);
   }
 
   /**
@@ -1103,6 +1095,30 @@ export class App {
     `).join('');
     
     setInnerHTML(tagsContainer, tagsHtml);
+  }
+
+  /**
+   * 渲染汇总信息
+   */
+  renderSummaryInfo(stats) {
+    // 更新笔记总数
+    const totalNotesCount = getElementById('totalNotesCount');
+    if (totalNotesCount) {
+      const totalCount = this.currentNotes.length;
+      setTextContent(totalNotesCount, totalCount.toString());
+    }
+
+    // 更新当前日期
+    const currentDate = getElementById('currentDate');
+    if (currentDate) {
+      const now = new Date();
+      const dateStr = now.toLocaleDateString('zh-CN', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
+      setTextContent(currentDate, dateStr);
+    }
   }
 
   /**
